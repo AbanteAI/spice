@@ -7,6 +7,8 @@ jobs:
       - name: Install dependencies
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
+          source $HOME/.cargo/env
+          pwd
           uv pip install -r dev-requirements.txt
       - name: ruff (linter)
         run: ruff check .
