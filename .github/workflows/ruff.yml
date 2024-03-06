@@ -9,6 +9,7 @@ jobs:
           curl -LsSf https://astral.sh/uv/install.sh | sh
           source $HOME/.cargo/env
           pwd
+          ls
           uv pip install -r dev-requirements.txt
       - name: ruff (linter)
         run: ruff check .
