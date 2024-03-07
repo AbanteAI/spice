@@ -9,7 +9,7 @@ jobs:
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
           uv venv
-          uv pip install -r dev-requirements.txt
+          uv pip install --system -r dev-requirements.txt
       - name: ruff (linter)
         run: ruff check .
       - name: ruff (formatter)
