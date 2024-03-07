@@ -8,7 +8,11 @@ jobs:
       - name: Install dependencies
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
-          uv pip install --system -r dev-requirements.txt
+          uv venv
+          uv pip install -r dev-requirements.txt
+      - name: activate venv
+        run: |
+          . .venv/bin/activate
       - name: ruff (linter)
         run: ruff check .
       - name: ruff (formatter)
