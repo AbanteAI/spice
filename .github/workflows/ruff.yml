@@ -5,7 +5,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - name: Install dependencies
+      - name: install reqs
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
           uv venv
@@ -13,6 +13,7 @@ jobs:
       - name: activate venv
         run: |
           . .venv/bin/activate
+          echo PATH=$PATH >> $GITHUB_ENV
       - name: ruff (linter)
         run: ruff check .
       - name: ruff (formatter)
