@@ -11,3 +11,7 @@
 - [ ] easy config - model aliases
 - [ ] cost tracking
 - [ ] prompt rendering *within* SpiceMessages inputs? i.e. parts of messages can be rendered at call time?
+- [ ] support response formats
+- [ ] support images
+- [ ] support temperature 
+- [ ] measure timing metrics
