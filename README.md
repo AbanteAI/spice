@@ -1,6 +1,8 @@
 - [ ] simple interface for sync/async steaming/not llm calls
 - [ ] first class support for OpenAI
 - [ ] first class support for Anthropic
+
+----------------
 - [ ] support other models through LiteLLM
 - [ ] token counting
 - [ ] input / output formats for maximum convenience
