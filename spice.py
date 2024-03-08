@@ -4,6 +4,7 @@ from anthropic import Anthropic
 from dotenv import load_dotenv
 from openai import OpenAI
 
+load_dotenv()
 
 
 class SpiceClient:
@@ -17,7 +18,6 @@ class SpiceClient:
 
         self.model = model
 
-        load_dotenv()
         if self._provider == "openai":
             self._client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         elif self._provider == "anthropic":
@@ -64,5 +64,6 @@ class SpiceClient:
                     content = chunk.delta.text
             else:
                 content = chunk.choices[0].delta.content
-            if content is not None:
-                yield content
+                if content is None:
+                    content = ""
+            yield content
