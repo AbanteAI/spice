@@ -4,7 +4,6 @@ from anthropic import Anthropic
 from dotenv import load_dotenv
 from openai import OpenAI
 
-_use_anthropic = True
 
 
 class SpiceClient:
