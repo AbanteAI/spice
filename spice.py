@@ -7,6 +7,43 @@ from openai import OpenAI
 load_dotenv()
 
 
+class SpiceError(Exception):
+    pass
+
+
+class SpiceResponse:
+    # will be returned by call_llm
+    # if stream, response will contain a generator, accessed with .stream()
+    # other attributes (cost, complete text response, etc.) will be available as well
+    # if stream=False, all attributes will be available immediately
+    # if stream=True, will error if trying to access attributes before stream is exhausted
+
+    def __init__(self, stream_generator, full_text=None, cost=None):
+        self._stream_generator = stream_generator
+        self._full_text = full_text
+        self._cost = cost
+
+    def _generator_exhausted(self):
+        if self._stream_generator is None:
+            return True
+
+        # hmm, not easy to check a generator... maybe we need to wrap it?
+        # returning true for now
+        return True
+
+    @property
+    def stream(self):
+        return self._stream_generator
+
+    @property
+    def text(self):
+        if self._full_text is None:
+            raise SpiceError("Full text not set")
+        if not self._generator_exhausted():
+            raise SpiceError("Cannot access full text until stream is exhausted")
+        return self._full_text
+
+
 class SpiceClient:
     def __init__(self, model):
         if model == "gpt-4-0125-preview":
@@ -51,10 +88,18 @@ class SpiceClient:
             return self._stream_generator(chat_completion_or_stream)
         else:
             if self._provider == "anthropic":
-                response = chat_completion_or_stream.content[0].text
+                sr = SpiceResponse(
+                    stream_generator=None,
+                    full_text=chat_completion_or_stream.content[0].text,
+                    cost=None,
+                )
             else:
-                response = chat_completion_or_stream.choices[0].message.content
-            return response
+                sr = SpiceResponse(
+                    stream_generator=None,
+                    full_text=chat_completion_or_stream.choices[0].message.content,
+                    cost=None,
+                )
+            return sr
 
     def _stream_generator(self, stream):
         for chunk in stream:

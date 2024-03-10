@@ -10,10 +10,10 @@ messages = [
 
 client = SpiceClient(model=model)
 
-for t in client.call_llm(system_message, messages, stream=True):
-    print(t, end="")
+# for t in client.call_llm(system_message, messages, stream=True):
+#     print(t, end="")
 
-print("\n####################\n")
+# print("\n####################\n")
 
-response = client.call_llm(system_message, messages, stream=False)
-print(response)
+spice_response = client.call_llm(system_message, messages, stream=False)
+print(spice_response.text)
