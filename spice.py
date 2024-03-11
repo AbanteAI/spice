@@ -18,10 +18,11 @@ class SpiceResponse:
     # if stream=False, all attributes will be available immediately
     # if stream=True, will error if trying to access attributes before stream is exhausted
 
-    def __init__(self, stream_generator, full_text=None, cost=None):
+    def __init__(self, stream_generator, full_text=None, cost=None, usage=None):
         self._stream_generator = stream_generator
         self._full_text = full_text
         self._cost = cost
+        self._usage = usage
 
     def _generator_exhausted(self):
         if self._stream_generator is None:
@@ -46,69 +47,86 @@ class SpiceResponse:
 
 class SpiceClient:
     def __init__(self, model):
-        if model == "gpt-4-0125-preview":
+        self.model = model
+
+        if self.model == "gpt-4-0125-preview":
             self._provider = "openai"
-        elif model == "claude-3-opus-20240229":
+            self._client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        elif self.model == "claude-3-opus-20240229":
             self._provider = "anthropic"
+            self._client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
         else:
             raise ValueError(f"Unknown model {model}")
 
-        self.model = model
-
-        if self._provider == "openai":
-            self._client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        elif self._provider == "anthropic":
-            self._client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-
     def call_llm(self, system_message, messages, stream=False):
+        # just route to 4 separate functions? how to handle other models better than that?
+        # make the SpiceResponse here, then send to functions to get filled based on provider / stream handlers?
+
         if self._provider == "anthropic":
-            chat_completion_or_stream = self._client.messages.create(
-                max_tokens=1024,
-                system=system_message,
-                messages=messages,
-                model=self.model,
-                temperature=0.3,
-                stream=stream,
+            return _call_llm_anthropic(
+                self._client, self.model, system_message, messages, stream
             )
         else:
-            _messages = [
-                {
-                    "role": "system",
-                    "content": system_message,
-                }
-            ] + messages
-            chat_completion_or_stream = self._client.chat.completions.create(
-                messages=_messages,
-                model=self.model,
-                temperature=0.3,
-                stream=stream,
+            return _call_llm_openai(
+                self._client, self.model, system_message, messages, stream
             )
 
-        if stream:
-            return self._stream_generator(chat_completion_or_stream)
-        else:
-            if self._provider == "anthropic":
-                sr = SpiceResponse(
-                    stream_generator=None,
-                    full_text=chat_completion_or_stream.content[0].text,
-                    cost=None,
-                )
-            else:
-                sr = SpiceResponse(
-                    stream_generator=None,
-                    full_text=chat_completion_or_stream.choices[0].message.content,
-                    cost=None,
-                )
-            return sr
 
-    def _stream_generator(self, stream):
-        for chunk in stream:
-            if self._provider == "anthropic":
+def _call_llm_anthropic(client, model, system_message, messages, stream):
+    chat_completion_or_stream = client.messages.create(
+        max_tokens=1024,
+        system=system_message,
+        messages=messages,
+        model=model,
+        temperature=0.3,
+        stream=stream,
+    )
+
+    if stream:
+        return _stream_generator(chat_completion_or_stream)
+
+    print(chat_completion_or_stream)
+    return SpiceResponse(
+        stream_generator=None,
+        full_text=chat_completion_or_stream.content[0].text,
+        cost=None,
+        usage=chat_completion_or_stream.usage,
+    )
+
+
+def _call_llm_openai(client, model, system_message, messages, stream):
+    _messages = [
+        {
+            "role": "system",
+            "content": system_message,
+        }
+    ] + messages
+    chat_completion_or_stream = client.chat.completions.create(
+        messages=_messages,
+        model=model,
+        temperature=0.3,
+        stream=stream,
+    )
+
+    if stream:
+        return _stream_generator(chat_completion_or_stream)
+
+    return SpiceResponse(
+        stream_generator=None,
+        full_text=chat_completion_or_stream.choices[0].message.content,
+        cost=None,
+        usage=chat_completion_or_stream.usage,
+    )
+
+
+def _stream_generator(stream):
+    for chunk in stream:
+        if self._provider == "anthropic":
+            content = ""
+            if chunk.type == "content_block_delta":
+                content = chunk.delta.text
+        else:
+            content = chunk.choices[0].delta.content
+            if content is None:
                 content = ""
-                if chunk.type == "content_block_delta":
-                    content = chunk.delta.text
-            else:
-                content = chunk.choices[0].delta.content
-                if content is None:
-                    content = ""
-            yield content
+        yield content
