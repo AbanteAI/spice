@@ -2,6 +2,7 @@ from spice import SpiceClient
 
 # model = "gpt-4-0125-preview"
 model = "claude-3-opus-20240229"
+stream = False
 
 system_message = "You are a helpful assistant."
 messages = [
@@ -10,10 +11,12 @@ messages = [
 
 client = SpiceClient(model=model)
 
-# for t in client.call_llm(system_message, messages, stream=True):
-#     print(t, end="")
+response = client.call_llm(system_message, messages, stream=stream)
 
-# print("\n####################\n")
+if stream:
+    for t in response.stream():
+        print(t, end="")
 
-spice_response = client.call_llm(system_message, messages, stream=False)
-print(spice_response.text)
+    print("\n####################\n")
+
+print(response.text)
