@@ -1,15 +1,15 @@
-from spice import SpiceClient
+from spice import Spice
 
 # model = "gpt-4-0125-preview"
 model = "claude-3-opus-20240229"
-stream = False
+stream = True
 
 system_message = "You are a helpful assistant."
 messages = [
     {"role": "user", "content": "list 5 random words"},
 ]
 
-client = SpiceClient(model=model)
+client = Spice(model=model)
 
 response = client.call_llm(system_message, messages, stream=stream)
 
