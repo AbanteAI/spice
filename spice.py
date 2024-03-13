@@ -45,9 +45,6 @@ class Spice:
             raise ValueError(f"Unknown model {model}")
 
     def call_llm(self, system_message, messages, stream=False):
-        # just route to 4 separate functions? how to handle other models better than that?
-        # make the SpiceResponse here, then send to functions to get filled based on provider / stream handlers?
-
         if self._provider == "anthropic":
             return _call_llm_anthropic(self._client, self.model, system_message, messages, stream)
         else:
