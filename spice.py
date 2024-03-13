@@ -18,7 +18,7 @@ class SpiceResponse:
     # if stream=False, all attributes will be available immediately
     # if stream=True, will error if trying to access attributes before stream is exhausted
 
-    def __init__(self, stream_generator, full_text=None, cost=None, usage=None):
+    def __init__(self, stream_generator=None, full_text=None, cost=None, usage=None):
         self._stream_generator = stream_generator
         self._full_text = full_text
         self._cost = cost
@@ -83,15 +83,32 @@ def _call_llm_anthropic(client, model, system_message, messages, stream):
     )
 
     if stream:
-        return _stream_generator(chat_completion_or_stream)
+        return _get_streaming_response_anthropic(chat_completion_or_stream)
+    else:
+        return SpiceResponse(
+            full_text=chat_completion_or_stream.content[0].text,
+            cost=None,
+            usage=chat_completion_or_stream.usage,
+        )
 
-    print(chat_completion_or_stream)
-    return SpiceResponse(
-        stream_generator=None,
-        full_text=chat_completion_or_stream.content[0].text,
-        cost=None,
-        usage=chat_completion_or_stream.usage,
+
+def _get_streaming_response_anthropic(stream):
+    full_text_list = []
+
+    def wrapped_stream():
+        for chunk in stream:
+            content = ""
+            if chunk.type == "content_block_delta":
+                content = chunk.delta.text
+            full_text_list.append(content)
+            yield content
+        response._full_text = "".join(full_text_list)
+
+    response = SpiceResponse(
+        stream_generator=wrapped_stream,
     )
+
+    return response
 
 
 def _call_llm_openai(client, model, system_message, messages, stream):
@@ -109,24 +126,28 @@ def _call_llm_openai(client, model, system_message, messages, stream):
     )
 
     if stream:
-        return _stream_generator(chat_completion_or_stream)
-
-    return SpiceResponse(
-        stream_generator=None,
-        full_text=chat_completion_or_stream.choices[0].message.content,
-        cost=None,
-        usage=chat_completion_or_stream.usage,
-    )
+        return _get_streaming_response_openai(chat_completion_or_stream)
+    else:
+        return SpiceResponse(
+            full_text=chat_completion_or_stream.choices[0].message.content,
+            usage=chat_completion_or_stream.usage,
+        )
 
 
-def _stream_generator(stream):
-    for chunk in stream:
-        if self._provider == "anthropic":
-            content = ""
-            if chunk.type == "content_block_delta":
-                content = chunk.delta.text
-        else:
+def _get_streaming_response_openai(stream):
+    full_text_list = []
+
+    def wrapped_stream():
+        for chunk in stream:
             content = chunk.choices[0].delta.content
             if content is None:
                 content = ""
-        yield content
+            full_text_list.append(content)
+            yield content
+        response._full_text = "".join(full_text_list)
+
+    response = SpiceResponse(
+        stream_generator=wrapped_stream,
+    )
+
+    return response
