@@ -62,32 +62,13 @@ def _call_llm_anthropic(client, model, system_message, messages, stream):
     )
 
     if stream:
-        return _get_streaming_response_anthropic(chat_completion_or_stream)
+        return _get_streaming_response(chat_completion_or_stream, _chunk_processor_anthropic)
     else:
         return SpiceResponse(
             text=chat_completion_or_stream.content[0].text,
             cost=None,
             usage=chat_completion_or_stream.usage,
         )
-
-
-def _get_streaming_response_anthropic(stream):
-    text_list = []
-
-    def wrapped_stream():
-        for chunk in stream:
-            content = ""
-            if chunk.type == "content_block_delta":
-                content = chunk.delta.text
-            text_list.append(content)
-            yield content
-        response._text = "".join(text_list)
-
-    response = SpiceResponse(
-        stream=wrapped_stream,
-    )
-
-    return response
 
 
 def _call_llm_openai(client, model, system_message, messages, stream):
@@ -105,7 +86,7 @@ def _call_llm_openai(client, model, system_message, messages, stream):
     )
 
     if stream:
-        return _get_streaming_response_openai(chat_completion_or_stream)
+        return _get_streaming_response(chat_completion_or_stream, _chunk_processor_openai)
     else:
         return SpiceResponse(
             text=chat_completion_or_stream.choices[0].message.content,
@@ -113,14 +94,12 @@ def _call_llm_openai(client, model, system_message, messages, stream):
         )
 
 
-def _get_streaming_response_openai(stream):
+def _get_streaming_response(stream, chunk_processor):
     text_list = []
 
     def wrapped_stream():
         for chunk in stream:
-            content = chunk.choices[0].delta.content
-            if content is None:
-                content = ""
+            content = chunk_processor(chunk)
             text_list.append(content)
             yield content
         response._text = "".join(text_list)
@@ -130,3 +109,17 @@ def _get_streaming_response_openai(stream):
     )
 
     return response
+
+
+def _chunk_processor_openai(chunk):
+    content = chunk.choices[0].delta.content
+    if content is None:
+        content = ""
+    return content
+
+
+def _chunk_processor_anthropic(chunk):
+    content = ""
+    if chunk.type == "content_block_delta":
+        content = chunk.delta.text
+    return content
