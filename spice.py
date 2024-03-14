@@ -1,8 +1,10 @@
 import os
+from abc import ABC, abstractmethod
 
 from anthropic import Anthropic
 from dotenv import load_dotenv
 from openai import OpenAI
+from pydantic import BaseModel
 
 load_dotenv()
 
@@ -38,20 +40,22 @@ class Spice:
         if self.model == "gpt-4-0125-preview":
             self._provider = "openai"
             self._client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        elif self.model == "claude-3-opus-20240229":
+            self._translator = OpenAITranslator()
+        elif "claude" in self.model:
             self._provider = "anthropic"
             self._client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+            self._translator = AnthropicTranslator()
         else:
             raise ValueError(f"Unknown model {model}")
 
     def call_llm(self, system_message, messages, stream=False):
         if self._provider == "anthropic":
-            return _call_llm_anthropic(self._client, self.model, system_message, messages, stream)
+            return _call_llm_anthropic(self._client, self.model, system_message, messages, stream, self._translator)
         else:
-            return _call_llm_openai(self._client, self.model, system_message, messages, stream)
+            return _call_llm_openai(self._client, self.model, system_message, messages, stream, self._translator)
 
 
-def _call_llm_anthropic(client, model, system_message, messages, stream):
+def _call_llm_anthropic(client, model, system_message, messages, stream, translator):
     chat_completion_or_stream = client.messages.create(
         max_tokens=1024,
         system=system_message,
@@ -62,7 +66,7 @@ def _call_llm_anthropic(client, model, system_message, messages, stream):
     )
 
     if stream:
-        return _get_streaming_response(chat_completion_or_stream, _chunk_processor_anthropic)
+        return _get_streaming_response(chat_completion_or_stream, translator)
     else:
         return SpiceResponse(
             text=chat_completion_or_stream.content[0].text,
@@ -71,7 +75,7 @@ def _call_llm_anthropic(client, model, system_message, messages, stream):
         )
 
 
-def _call_llm_openai(client, model, system_message, messages, stream):
+def _call_llm_openai(client, model, system_message, messages, stream, translator):
     _messages = [
         {
             "role": "system",
@@ -86,7 +90,7 @@ def _call_llm_openai(client, model, system_message, messages, stream):
     )
 
     if stream:
-        return _get_streaming_response(chat_completion_or_stream, _chunk_processor_openai)
+        return _get_streaming_response(chat_completion_or_stream, translator)
     else:
         return SpiceResponse(
             text=chat_completion_or_stream.choices[0].message.content,
@@ -94,12 +98,12 @@ def _call_llm_openai(client, model, system_message, messages, stream):
         )
 
 
-def _get_streaming_response(stream, chunk_processor):
+def _get_streaming_response(stream, translator):
     text_list = []
 
     def wrapped_stream():
         for chunk in stream:
-            content = chunk_processor(chunk)
+            content = translator.process_chunk(chunk)
             text_list.append(content)
             yield content
         response._text = "".join(text_list)
@@ -111,15 +115,23 @@ def _get_streaming_response(stream, chunk_processor):
     return response
 
 
-def _chunk_processor_openai(chunk):
-    content = chunk.choices[0].delta.content
-    if content is None:
+class APITranslator(ABC):
+    @abstractmethod
+    def process_chunk(self, chunk):
+        pass
+
+
+class OpenAITranslator(APITranslator):
+    def process_chunk(self, chunk):
+        content = chunk.choices[0].delta.content
+        if content is None:
+            content = ""
+        return content
+
+
+class AnthropicTranslator(APITranslator):
+    def process_chunk(self, chunk):
         content = ""
-    return content
-
-
-def _chunk_processor_anthropic(chunk):
-    content = ""
-    if chunk.type == "content_block_delta":
-        content = chunk.delta.text
-    return content
+        if chunk.type == "content_block_delta":
+            content = chunk.delta.text
+        return content
