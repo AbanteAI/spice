@@ -38,28 +38,43 @@ class Spice:
         self.model = model
 
         if "gpt" in self.model:
-            self._translator = OpenAITranslator()
+            self._client = WrappedOpenAIClient()
         elif "claude" in self.model:
-            self._translator = AnthropicTranslator()
+            self._client = WrappedAnthropicClient()
         else:
             raise ValueError(f"Unknown model {model}")
 
     def call_llm(self, system_message, messages, stream=False):
-        chat_completion_or_stream = self._translator.get_chat_completion_or_stream(
+        chat_completion_or_stream = self._client.get_chat_completion_or_stream(
             self.model, system_message, messages, stream
         )
 
         if stream:
-            return _get_streaming_response(chat_completion_or_stream, self._translator)
+            return self._get_streaming_response(chat_completion_or_stream)
         else:
             return SpiceResponse(
-                text=self._translator.extract_text(chat_completion_or_stream),
+                text=self._client.extract_text(chat_completion_or_stream),
                 usage=chat_completion_or_stream.usage,
             )
 
+    def _get_streaming_response(self, stream):
+        text_list = []
 
-# better name? WrappedClient? GeneralizedClient?
-class APITranslator(ABC):
+        def wrapped_stream():
+            for chunk in stream:
+                content = self._client.process_chunk(chunk)
+                text_list.append(content)
+                yield content
+            response._text = "".join(text_list)
+
+        response = SpiceResponse(
+            stream=wrapped_stream,
+        )
+
+        return response
+
+
+class WrappedClient(ABC):
     @abstractmethod
     def get_chat_completion_or_stream(self, model, system_message, messages, stream):
         pass
@@ -73,7 +88,7 @@ class APITranslator(ABC):
         pass
 
 
-class OpenAITranslator(APITranslator):
+class WrappedOpenAIClient(WrappedClient):
     def __init__(self):
         self._client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
@@ -101,7 +116,7 @@ class OpenAITranslator(APITranslator):
         return chat_completion.choices[0].message.content
 
 
-class AnthropicTranslator(APITranslator):
+class WrappedAnthropicClient(WrappedClient):
     def __init__(self):
         self._client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
@@ -123,20 +138,3 @@ class AnthropicTranslator(APITranslator):
 
     def extract_text(self, chat_completion):
         return chat_completion.content[0].text
-
-
-def _get_streaming_response(stream, translator):
-    text_list = []
-
-    def wrapped_stream():
-        for chunk in stream:
-            content = translator.process_chunk(chunk)
-            text_list.append(content)
-            yield content
-        response._text = "".join(text_list)
-
-    response = SpiceResponse(
-        stream=wrapped_stream,
-    )
-
-    return response
