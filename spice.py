@@ -37,65 +37,92 @@ class Spice:
     def __init__(self, model):
         self.model = model
 
-        if self.model == "gpt-4-0125-preview":
-            self._provider = "openai"
-            self._client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        if "gpt" in self.model:
             self._translator = OpenAITranslator()
         elif "claude" in self.model:
-            self._provider = "anthropic"
-            self._client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
             self._translator = AnthropicTranslator()
         else:
             raise ValueError(f"Unknown model {model}")
 
     def call_llm(self, system_message, messages, stream=False):
-        if self._provider == "anthropic":
-            return _call_llm_anthropic(self._client, self.model, system_message, messages, stream, self._translator)
+        chat_completion_or_stream = self._translator.get_chat_completion_or_stream(
+            self.model, system_message, messages, stream
+        )
+
+        if stream:
+            return _get_streaming_response(chat_completion_or_stream, self._translator)
         else:
-            return _call_llm_openai(self._client, self.model, system_message, messages, stream, self._translator)
+            return SpiceResponse(
+                text=self._translator.extract_text(chat_completion_or_stream),
+                usage=chat_completion_or_stream.usage,
+            )
 
 
-def _call_llm_anthropic(client, model, system_message, messages, stream, translator):
-    chat_completion_or_stream = client.messages.create(
-        max_tokens=1024,
-        system=system_message,
-        messages=messages,
-        model=model,
-        temperature=0.3,
-        stream=stream,
-    )
+# better name? WrappedClient? GeneralizedClient?
+class APITranslator(ABC):
+    @abstractmethod
+    def get_chat_completion_or_stream(self, model, system_message, messages, stream):
+        pass
 
-    if stream:
-        return _get_streaming_response(chat_completion_or_stream, translator)
-    else:
-        return SpiceResponse(
-            text=chat_completion_or_stream.content[0].text,
-            cost=None,
-            usage=chat_completion_or_stream.usage,
+    @abstractmethod
+    def process_chunk(self, chunk):
+        pass
+
+    @abstractmethod
+    def extract_text(self, chat_completion):
+        pass
+
+
+class OpenAITranslator(APITranslator):
+    def __init__(self):
+        self._client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+    def get_chat_completion_or_stream(self, model, system_message, messages, stream):
+        _messages = [
+            {
+                "role": "system",
+                "content": system_message,
+            }
+        ] + messages
+        return self._client.chat.completions.create(
+            messages=_messages,
+            model=model,
+            temperature=0.3,
+            stream=stream,
         )
 
+    def process_chunk(self, chunk):
+        content = chunk.choices[0].delta.content
+        if content is None:
+            content = ""
+        return content
 
-def _call_llm_openai(client, model, system_message, messages, stream, translator):
-    _messages = [
-        {
-            "role": "system",
-            "content": system_message,
-        }
-    ] + messages
-    chat_completion_or_stream = client.chat.completions.create(
-        messages=_messages,
-        model=model,
-        temperature=0.3,
-        stream=stream,
-    )
+    def extract_text(self, chat_completion):
+        return chat_completion.choices[0].message.content
 
-    if stream:
-        return _get_streaming_response(chat_completion_or_stream, translator)
-    else:
-        return SpiceResponse(
-            text=chat_completion_or_stream.choices[0].message.content,
-            usage=chat_completion_or_stream.usage,
+
+class AnthropicTranslator(APITranslator):
+    def __init__(self):
+        self._client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+
+    def get_chat_completion_or_stream(self, model, system_message, messages, stream):
+        return self._client.messages.create(
+            max_tokens=1024,
+            system=system_message,
+            messages=messages,
+            model=model,
+            temperature=0.3,
+            stream=stream,
         )
+
+    def process_chunk(self, chunk):
+        content = ""
+        if chunk.type == "content_block_delta":
+            content = chunk.delta.text
+        return content
+
+    def extract_text(self, chat_completion):
+        return chat_completion.content[0].text
 
 
 def _get_streaming_response(stream, translator):
@@ -113,25 +140,3 @@ def _get_streaming_response(stream, translator):
     )
 
     return response
-
-
-class APITranslator(ABC):
-    @abstractmethod
-    def process_chunk(self, chunk):
-        pass
-
-
-class OpenAITranslator(APITranslator):
-    def process_chunk(self, chunk):
-        content = chunk.choices[0].delta.content
-        if content is None:
-            content = ""
-        return content
-
-
-class AnthropicTranslator(APITranslator):
-    def process_chunk(self, chunk):
-        content = ""
-        if chunk.type == "content_block_delta":
-            content = chunk.delta.text
-        return content
