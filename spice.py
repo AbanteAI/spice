@@ -33,11 +33,6 @@ class Timing(BaseModel):
 
 
 class SpiceResponse:
-    def __init__(self, stream=None, text=None, cost=None, usage=None, timing=None):
-        self._stream = stream
-        self._text = text
-        self._cost = cost
-        self._usage = usage
         self._timing = timing
     @property
     def stream(self):
@@ -50,6 +45,7 @@ class SpiceResponse:
         if self._text is None:
             raise SpiceError("Text not set! Did you iterate over the stream?")
         return self._text
+
     @property
     def timing(self):
         if self._timing is None:
@@ -77,7 +73,13 @@ class Spice:
         if stream:
             return self._get_streaming_response(chat_completion_or_stream)
         else:
-        end_time = time.time()
+            end_time = time.time()
+            timing = Timing(time_called=start_time, time_first_token=None, time_end=end_time)
+            return SpiceResponse(
+                text=self._client.extract_text(chat_completion_or_stream),
+                usage=chat_completion_or_stream.usage,
+                timing=timing,
+            )
         timing = Timing(time_called=start_time, time_first_token=None, time_end=end_time)
             return SpiceResponse(
                 text=self._client.extract_text(chat_completion_or_stream),
