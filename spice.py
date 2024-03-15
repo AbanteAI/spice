@@ -1,3 +1,6 @@
+# TODO: track timing, usage, cost
+# TODO: async
+
 import os
 from abc import ABC, abstractmethod
 
@@ -11,6 +14,21 @@ load_dotenv()
 
 class SpiceError(Exception):
     pass
+
+
+class Usage(BaseModel):
+    input_tokens: int
+    output_tokens: int
+
+    @property
+    def total_tokens(self):
+        return self.input_tokens + self.output_tokens
+
+
+class Timing(BaseModel):
+    time_called: float
+    time_first_token: float
+    time_end: float
 
 
 class SpiceResponse:
