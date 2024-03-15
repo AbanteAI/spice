@@ -72,36 +72,16 @@ class Spice:
         )
 
         if stream:
-            return self._get_streaming_response(chat_completion_or_stream)
+            response = self._get_streaming_response(chat_completion_or_stream)
         else:
-            end_time = time.time()
-            timing = Timing(time_called=start_time, time_first_token=None, time_end=end_time)
-            return SpiceResponse(
+            response = SpiceResponse(
                 text=self._client.extract_text(chat_completion_or_stream),
                 usage=chat_completion_or_stream.usage,
-                timing=timing,
-            )
             )
 
-    def _get_streaming_response(self, stream):
-        text_list = []
-
-        def wrapped_stream():
-            first_token_time = None
-            for chunk in stream:
-                content = self._client.process_chunk(chunk)
-                if first_token_time is None:
-                    first_token_time = time.time()
-                text_list.append(content)
-                yield content
-            response._text = "".join(text_list)
         end_time = time.time()
-        timing = Timing(time_called=start_time, time_first_token=first_token_time, time_end=end_time)
-
-        response = SpiceResponse(
-            stream=wrapped_stream,
-            timing=timing,
-        )
+        timing = Timing(time_called=start_time, time_first_token=None, time_end=end_time)
+        response.timing = timing
 
         return response
 
