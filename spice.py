@@ -46,6 +46,7 @@ class SpiceResponse:
             raise SpiceError("Text not set! Did you iterate over the stream?")
         return self._text
 
+
     @property
     def timing(self):
         if self._timing is None:
@@ -80,11 +81,6 @@ class Spice:
                 usage=chat_completion_or_stream.usage,
                 timing=timing,
             )
-        timing = Timing(time_called=start_time, time_first_token=None, time_end=end_time)
-            return SpiceResponse(
-                text=self._client.extract_text(chat_completion_or_stream),
-                usage=chat_completion_or_stream.usage,
-                timing=timing,
             )
 
     def _get_streaming_response(self, stream):
