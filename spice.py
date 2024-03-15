@@ -2,6 +2,7 @@
 # TODO: async
 
 import os
+import time
 from abc import ABC, abstractmethod
 
 from anthropic import Anthropic
@@ -32,7 +33,12 @@ class Timing(BaseModel):
 
 
 class SpiceResponse:
-    def __init__(self, stream=None, text=None, cost=None, usage=None):
+    def __init__(self, stream=None, text=None, cost=None, usage=None, timing=None):
+        self._stream = stream
+        self._text = text
+        self._cost = cost
+        self._usage = usage
+        self._timing = timing
         self._stream = stream
         self._text = text
         self._cost = cost
@@ -49,6 +55,11 @@ class SpiceResponse:
         if self._text is None:
             raise SpiceError("Text not set! Did you iterate over the stream?")
         return self._text
+    @property
+    def timing(self):
+        if self._timing is None:
+            raise SpiceError("Timing not set!")
+        return self._timing
 
 
 class Spice:
@@ -63,6 +74,7 @@ class Spice:
             raise ValueError(f"Unknown model {model}")
 
     def call_llm(self, system_message, messages, stream=False):
+        start_time = time.time()
         chat_completion_or_stream = self._client.get_chat_completion_or_stream(
             self.model, system_message, messages, stream
         )
@@ -70,23 +82,32 @@ class Spice:
         if stream:
             return self._get_streaming_response(chat_completion_or_stream)
         else:
+        end_time = time.time()
+        timing = Timing(time_called=start_time, time_first_token=None, time_end=end_time)
             return SpiceResponse(
                 text=self._client.extract_text(chat_completion_or_stream),
                 usage=chat_completion_or_stream.usage,
+                timing=timing,
             )
 
     def _get_streaming_response(self, stream):
         text_list = []
 
         def wrapped_stream():
+            first_token_time = None
             for chunk in stream:
                 content = self._client.process_chunk(chunk)
+                if first_token_time is None:
+                    first_token_time = time.time()
                 text_list.append(content)
                 yield content
             response._text = "".join(text_list)
+        end_time = time.time()
+        timing = Timing(time_called=start_time, time_first_token=first_token_time, time_end=end_time)
 
         response = SpiceResponse(
             stream=wrapped_stream,
+            timing=timing,
         )
 
         return response
