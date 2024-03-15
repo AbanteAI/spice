@@ -39,11 +39,6 @@ class SpiceResponse:
         self._cost = cost
         self._usage = usage
         self._timing = timing
-        self._stream = stream
-        self._text = text
-        self._cost = cost
-        self._usage = usage
-
     @property
     def stream(self):
         if self._stream is None:
