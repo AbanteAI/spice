@@ -1,7 +1,10 @@
 from spice import Spice
 
+# temporarily leave these lines to quickly switch between models
+# model = "gpt-3.5-turbo-0125"
 # model = "gpt-4-0125-preview"
 model = "claude-3-opus-20240229"
+# model = "claude-3-haiku-20240307"
 stream = True
 
 system_message = "You are a helpful assistant."
