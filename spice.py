@@ -1,4 +1,4 @@
-# TODO: track timing, usage, cost
+# TODO: track timing, usage - track streaming openai usage
 # TODO: async
 
 import os
@@ -27,14 +27,15 @@ class Usage(BaseModel):
 
 
 class SpiceResponse:
-    def __init__(self, stream=None, text=None, cost=None, usage=None):
+    def __init__(self, stream=None, text=None, cost=None, input_tokens=None, output_tokens=None):
         self._stream = stream
         self._text = text
         self._cost = cost
-        self._usage = usage
         self._start_time = None
         self._first_token_time = None
         self._end_time = None
+        self.input_tokens = input_tokens
+        self.output_tokens = output_tokens
 
     @property
     def stream(self):
@@ -50,11 +51,21 @@ class SpiceResponse:
 
     @property
     def time_to_first_token(self):
+        if self._stream is None:
+            raise SpiceError("Time to first token not tracked for non-streaming responses")
         return self._first_token_time - self._start_time
 
     @property
     def total_time(self):
         return self._end_time - self._start_time
+
+    @property
+    def total_tokens(self):
+        return self.input_tokens + self.output_tokens
+
+    @property
+    def characters_per_second(self):
+        return len(self.text) / self.total_time
 
 
 class Spice:
@@ -69,7 +80,6 @@ class Spice:
             raise ValueError(f"Unknown model {model}")
 
     def call_llm(self, system_message, messages, stream=False):
-        # TODO: create response here?
         start_time = timer()
         chat_completion_or_stream = self._client.get_chat_completion_or_stream(
             self.model, system_message, messages, stream
@@ -78,9 +88,11 @@ class Spice:
         if stream:
             response = self._get_streaming_response(chat_completion_or_stream)
         else:
+            input_tokens, output_tokens = self._client.get_input_and_output_tokens(chat_completion_or_stream)
             response = SpiceResponse(
                 text=self._client.extract_text(chat_completion_or_stream),
-                usage=chat_completion_or_stream.usage,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
             )
             response._end_time = timer()
 
@@ -93,11 +105,18 @@ class Spice:
 
         def wrapped_stream():
             for chunk in stream:
-                content = self._client.process_chunk(chunk)
-                if content and response._first_token_time is None:
-                    response._first_token_time = timer()
-                text_list.append(content)
-                yield content
+                content, input_tokens, output_tokens = self._client.process_chunk(chunk)
+                if input_tokens is not None:
+                    response.input_tokens = input_tokens
+                if output_tokens is not None:
+                    response.output_tokens = output_tokens
+                if content is not None:
+                    if response._first_token_time is None:
+                        response._first_token_time = timer()
+                    text_list.append(content)
+                    yield content
+
+            print(f"\n\ncontent count: {len(text_list)}")
             response._text = "".join(text_list)
             response._end_time = timer()
 
@@ -121,6 +140,10 @@ class WrappedClient(ABC):
     def extract_text(self, chat_completion):
         pass
 
+    @abstractmethod
+    def get_input_and_output_tokens(self, chat_completion):
+        pass
+
 
 class WrappedOpenAIClient(WrappedClient):
     def __init__(self):
@@ -142,12 +165,14 @@ class WrappedOpenAIClient(WrappedClient):
 
     def process_chunk(self, chunk):
         content = chunk.choices[0].delta.content
-        if content is None:
-            content = ""
-        return content
+        return content, None, None
 
     def extract_text(self, chat_completion):
         return chat_completion.choices[0].message.content
+
+    def get_input_and_output_tokens(self, chat_completion):
+        usage = chat_completion.usage
+        return usage.prompt_tokens, usage.completion_tokens
 
 
 class WrappedAnthropicClient(WrappedClient):
@@ -165,10 +190,19 @@ class WrappedAnthropicClient(WrappedClient):
         )
 
     def process_chunk(self, chunk):
-        content = ""
+        content = None
+        input_tokens = None
+        output_tokens = None
         if chunk.type == "content_block_delta":
             content = chunk.delta.text
-        return content
+        elif chunk.type == "message_start":
+            input_tokens = chunk.message.usage.input_tokens
+        elif chunk.type == "message_delta":
+            output_tokens = chunk.usage.output_tokens
+        return content, input_tokens, output_tokens
 
     def extract_text(self, chat_completion):
         return chat_completion.content[0].text
+
+    def get_input_and_output_tokens(self, chat_completion):
+        return chat_completion.usage.input_tokens, chat_completion.usage.output_tokens
