@@ -77,6 +77,7 @@ class Spice:
             raise ValueError(f"Unknown model {model}")
 
     def call_llm(self, system_message, messages, stream=False):
+        # TODO: create response here?
         start_time = timer()
         chat_completion_or_stream = self._client.get_chat_completion_or_stream(
             self.model, system_message, messages, stream
@@ -89,31 +90,28 @@ class Spice:
                 text=self._client.extract_text(chat_completion_or_stream),
                 usage=chat_completion_or_stream.usage,
             )
+            response.timing.end_time = timer()
 
         response.timing.start_time = start_time
-        response.timing.end_time = timer()
 
         return response
 
     def _get_streaming_response(self, stream):
         text_list = []
-        first_token_time = None
 
         def wrapped_stream():
-            first_token = False
             for chunk in stream:
                 content = self._client.process_chunk(chunk)
-                if content:
-                    first_token = True
-                    first_token_time = timer()
+                if content and response.timing.first_token_time is None:
+                    response.timing.first_token_time = timer()
                 text_list.append(content)
                 yield content
             response._text = "".join(text_list)
+            response.timing.end_time = timer()
 
         response = SpiceResponse(
             stream=wrapped_stream,
         )
-        response.timing.first_token_time = first_token_time
 
         return response
 

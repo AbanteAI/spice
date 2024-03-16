@@ -25,3 +25,4 @@ if stream:
 
 print(response.text)
 print(f"Took {response.timing.total_time:.2f}s")
+print(f"Time to first token: {response.timing.time_to_first_token:.2f}s")
