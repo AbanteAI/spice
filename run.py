@@ -1,3 +1,4 @@
+# TODO: use fire and command line args
 from spice import Spice
 
 # temporarily leave these lines to quickly switch between models
@@ -23,3 +24,5 @@ if stream:
     print("\n####################\n")
 
 print(response.text)
+print(f"Took {response.timing.total_time:.2f}s")
+print(f"Time to first token: {response.timing.time_to_first_token:.2f}s")
