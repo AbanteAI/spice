@@ -26,27 +26,15 @@ class Usage(BaseModel):
         return self.input_tokens + self.output_tokens
 
 
-class Timing(BaseModel):
-    start_time: float = Field(default=None)
-    first_token_time: float = Field(default=None)
-    end_time: float = Field(default=None)
-
-    @property
-    def time_to_first_token(self):
-        return self.first_token_time - self.start_time
-
-    @property
-    def total_time(self):
-        return self.end_time - self.start_time
-
-
 class SpiceResponse:
     def __init__(self, stream=None, text=None, cost=None, usage=None):
         self._stream = stream
         self._text = text
         self._cost = cost
         self._usage = usage
-        self._timing = Timing()
+        self._start_time = None
+        self._first_token_time = None
+        self._end_time = None
 
     @property
     def stream(self):
@@ -61,8 +49,12 @@ class SpiceResponse:
         return self._text
 
     @property
-    def timing(self):
-        return self._timing
+    def time_to_first_token(self):
+        return self._first_token_time - self._start_time
+
+    @property
+    def total_time(self):
+        return self._end_time - self._start_time
 
 
 class Spice:
@@ -90,9 +82,9 @@ class Spice:
                 text=self._client.extract_text(chat_completion_or_stream),
                 usage=chat_completion_or_stream.usage,
             )
-            response.timing.end_time = timer()
+            response._end_time = timer()
 
-        response.timing.start_time = start_time
+        response._start_time = start_time
 
         return response
 
@@ -102,12 +94,12 @@ class Spice:
         def wrapped_stream():
             for chunk in stream:
                 content = self._client.process_chunk(chunk)
-                if content and response.timing.first_token_time is None:
-                    response.timing.first_token_time = timer()
+                if content and response._first_token_time is None:
+                    response._first_token_time = timer()
                 text_list.append(content)
                 yield content
             response._text = "".join(text_list)
-            response.timing.end_time = timer()
+            response._end_time = timer()
 
         response = SpiceResponse(
             stream=wrapped_stream,
