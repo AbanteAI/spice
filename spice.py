@@ -116,7 +116,6 @@ class Spice:
                     text_list.append(content)
                     yield content
 
-            print(f"\n\ncontent count: {len(text_list)}")
             response._text = "".join(text_list)
             response._end_time = timer()
 
