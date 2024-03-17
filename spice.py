@@ -1,4 +1,3 @@
-# TODO: track timing, usage - track streaming openai usage
 # TODO: async
 
 import os
@@ -8,22 +7,12 @@ from timeit import default_timer as timer
 from anthropic import Anthropic
 from dotenv import load_dotenv
 from openai import OpenAI
-from pydantic import BaseModel, Field
 
 load_dotenv()
 
 
 class SpiceError(Exception):
     pass
-
-
-class Usage(BaseModel):
-    input_tokens: int
-    output_tokens: int
-
-    @property
-    def total_tokens(self):
-        return self.input_tokens + self.output_tokens
 
 
 class SpiceResponse:
