@@ -1,4 +1,5 @@
 # TODO: async
+# TODO: sync and async examples?
 
 import os
 from abc import ABC, abstractmethod
@@ -117,20 +118,16 @@ class Spice:
 
 class WrappedClient(ABC):
     @abstractmethod
-    def get_chat_completion_or_stream(self, model, system_message, messages, stream):
-        pass
+    def get_chat_completion_or_stream(self, model, system_message, messages, stream): ...
 
     @abstractmethod
-    def process_chunk(self, chunk):
-        pass
+    def process_chunk(self, chunk): ...
 
     @abstractmethod
-    def extract_text(self, chat_completion):
-        pass
+    def extract_text(self, chat_completion): ...
 
     @abstractmethod
-    def get_input_and_output_tokens(self, chat_completion):
-        pass
+    def get_input_and_output_tokens(self, chat_completion): ...
 
 
 class WrappedOpenAIClient(WrappedClient):
