@@ -1,3 +1,5 @@
+import asyncio
+
 import fire
 
 from spice import Spice
@@ -20,7 +22,7 @@ def get_model(model_hint):
             return model
 
 
-def run(model="", stream=False):
+async def run(model="", stream=False):
     model = get_model(model)
     system_message = "You are a helpful assistant."
     messages = [
@@ -29,11 +31,11 @@ def run(model="", stream=False):
 
     client = Spice(model=model)
 
-    response = client.call_llm(system_message, messages, stream=stream)
+    response = await client.call_llm(system_message, messages, stream=stream)
 
     print(">>>>>>>>>>>>>")
     if stream:
-        for t in response.stream():
+        async for t in response.stream():
             print(t, end="", flush=True)
     else:
         print(response.text)
@@ -48,5 +50,17 @@ def run(model="", stream=False):
     print(f"Characters per second: {response.characters_per_second:.2f}")
 
 
+async def count_and_print():
+    for i in range(10):
+        print(f"${i}$", end="", flush=True)
+        await asyncio.sleep(1)
+
+
+def run_async(model="", stream=False):
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(asyncio.gather(run(model, stream), count_and_print()))
+    loop.close()
+
+
 if __name__ == "__main__":
-    fire.Fire(run)
+    fire.Fire(run_async)
