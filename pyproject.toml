@@ -1,2 +1,12 @@
 [tool.ruff]
 line-length = 120
+
+[tool.hatch]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "spice"
+version = "0.1.0"
