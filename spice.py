@@ -1,6 +1,3 @@
-# TODO: async
-# TODO: sync and async examples?
-
 import os
 from abc import ABC, abstractmethod
 from timeit import default_timer as timer
