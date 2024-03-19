@@ -1,11 +1,14 @@
 [tool.ruff]
 line-length = 120
 
-[tool.hatch]
-
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch]
+
+[tool.hatch.build.targets.wheel]
+packages=["spice"]
 
 [project]
 name = "spice"
