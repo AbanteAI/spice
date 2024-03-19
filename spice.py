@@ -5,9 +5,9 @@ import os
 from abc import ABC, abstractmethod
 from timeit import default_timer as timer
 
-from anthropic import Anthropic
+from anthropic import AsyncAnthropic
 from dotenv import load_dotenv
-from openai import OpenAI
+from openai import AsyncOpenAI
 
 load_dotenv()
 
@@ -69,14 +69,14 @@ class Spice:
         else:
             raise ValueError(f"Unknown model {model}")
 
-    def call_llm(self, system_message, messages, stream=False):
+    async def call_llm(self, system_message, messages, stream=False):
         start_time = timer()
-        chat_completion_or_stream = self._client.get_chat_completion_or_stream(
+        chat_completion_or_stream = await self._client.get_chat_completion_or_stream(
             self.model, system_message, messages, stream
         )
 
         if stream:
-            response = self._get_streaming_response(chat_completion_or_stream)
+            response = await self._get_streaming_response(chat_completion_or_stream)
         else:
             input_tokens, output_tokens = self._client.get_input_and_output_tokens(chat_completion_or_stream)
             response = SpiceResponse(
@@ -90,11 +90,11 @@ class Spice:
 
         return response
 
-    def _get_streaming_response(self, stream):
+    async def _get_streaming_response(self, stream):
         text_list = []
 
-        def wrapped_stream():
-            for chunk in stream:
+        async def wrapped_stream():
+            async for chunk in stream:
                 content, input_tokens, output_tokens = self._client.process_chunk(chunk)
                 if input_tokens is not None:
                     response.input_tokens = input_tokens
@@ -118,7 +118,7 @@ class Spice:
 
 class WrappedClient(ABC):
     @abstractmethod
-    def get_chat_completion_or_stream(self, model, system_message, messages, stream): ...
+    async def get_chat_completion_or_stream(self, model, system_message, messages, stream): ...
 
     @abstractmethod
     def process_chunk(self, chunk): ...
@@ -132,16 +132,16 @@ class WrappedClient(ABC):
 
 class WrappedOpenAIClient(WrappedClient):
     def __init__(self):
-        self._client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        self._client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-    def get_chat_completion_or_stream(self, model, system_message, messages, stream):
+    async def get_chat_completion_or_stream(self, model, system_message, messages, stream):
         _messages = [
             {
                 "role": "system",
                 "content": system_message,
             }
         ] + messages
-        return self._client.chat.completions.create(
+        return await self._client.chat.completions.create(
             messages=_messages,
             model=model,
             temperature=0.3,
@@ -162,10 +162,10 @@ class WrappedOpenAIClient(WrappedClient):
 
 class WrappedAnthropicClient(WrappedClient):
     def __init__(self):
-        self._client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        self._client = AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
-    def get_chat_completion_or_stream(self, model, system_message, messages, stream):
-        return self._client.messages.create(
+    async def get_chat_completion_or_stream(self, model, system_message, messages, stream):
+        return await self._client.messages.create(
             max_tokens=1024,
             system=system_message,
             messages=messages,
