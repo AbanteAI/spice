@@ -50,16 +50,8 @@ async def run(model="", stream=False):
     print(f"Characters per second: {response.characters_per_second:.2f}")
 
 
-async def count_and_print():
-    for i in range(10):
-        print(f"${i}$", end="", flush=True)
-        await asyncio.sleep(1)
-
-
 def run_async(model="", stream=False):
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(asyncio.gather(run(model, stream), count_and_print()))
-    loop.close()
+    asyncio.run(run(model, stream))
 
 
 if __name__ == "__main__":
