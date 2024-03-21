@@ -96,12 +96,10 @@ class Spice:
     def __init__(self, provider=None):
         self._client = _get_client(provider)
 
-    async def call_llm(
-        self, model, system_message, messages, stream=False, temperature=None, max_tokens=None, response_format=None
-    ):
+    async def call_llm(self, model, messages, stream=False, temperature=None, max_tokens=None, response_format=None):
         start_time = timer()
         chat_completion_or_stream = await self._client.get_chat_completion_or_stream(
-            model, system_message, messages, stream, temperature, max_tokens, response_format
+            model, messages, stream, temperature, max_tokens, response_format
         )
 
         if stream:
@@ -148,7 +146,7 @@ class Spice:
 class WrappedClient(ABC):
     @abstractmethod
     async def get_chat_completion_or_stream(
-        self, model, system_message, messages, stream, temperature, max_tokens, response_format
+        self, model, messages, stream, temperature, max_tokens, response_format
     ): ...
 
     @abstractmethod
@@ -165,16 +163,7 @@ class WrappedOpenAIClient(WrappedClient):
     def __init__(self, key, base_url=None):
         self._client = AsyncOpenAI(api_key=key, base_url=base_url)
 
-    async def get_chat_completion_or_stream(
-        self, model, system_message, messages, stream, temperature, max_tokens, response_format
-    ):
-        _messages = [
-            {
-                "role": "system",
-                "content": system_message,
-            }
-        ] + messages
-
+    async def get_chat_completion_or_stream(self, model, messages, stream, temperature, max_tokens, response_format):
         # WrappedOpenAIClient can be used with a proxy to a non openai llm, which may not support response_format
         maybe_response_format_kwargs = (
             {"response_format": response_format} if response_format not in [None, "text"] else {}
@@ -182,7 +171,7 @@ class WrappedOpenAIClient(WrappedClient):
 
         return await self._client.chat.completions.create(
             model=model,
-            messages=_messages,
+            messages=messages,
             stream=stream,
             temperature=temperature,
             max_tokens=max_tokens,
@@ -214,9 +203,11 @@ class WrappedAnthropicClient(WrappedClient):
     def __init__(self, key):
         self._client = AsyncAnthropic(api_key=key)
 
-    async def get_chat_completion_or_stream(
-        self, model, system_message, messages, stream, temperature, max_tokens, response_format
-    ):
+    async def get_chat_completion_or_stream(self, model, messages, stream, temperature, max_tokens, response_format):
+        if messages[0]["role"] == "system":
+            system = messages[0]["content"]
+            messages = messages[1:]
+
         if response_format is not None:
             raise SpiceError("response_format not supported by anthropic")
 
@@ -229,7 +220,7 @@ class WrappedAnthropicClient(WrappedClient):
 
         return await self._client.messages.create(
             model=model,
-            system=system_message,
+            system=system,
             messages=messages,
             stream=stream,
             max_tokens=max_tokens,

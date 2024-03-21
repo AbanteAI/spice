@@ -33,14 +33,14 @@ def get_provider_and_model(model_hint):
 
 async def run(model="", stream=False):
     provider, model = get_provider_and_model(model)
-    system_message = "You are a helpful assistant."
     messages = [
+        {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "list 5 random words"},
     ]
 
     client = Spice(provider)
 
-    response = await client.call_llm(model, system_message, messages, stream=stream)
+    response = await client.call_llm(model, messages, stream=stream)
 
     print(">>>>>>>>>>>>>")
     if stream:
