@@ -4,7 +4,7 @@ from timeit import default_timer as timer
 
 from anthropic import AsyncAnthropic
 from dotenv import load_dotenv
-from openai import AsyncOpenAI
+from openai import AsyncAzureOpenAI, AsyncOpenAI
 
 load_dotenv()
 
@@ -55,21 +55,53 @@ class SpiceResponse:
         return len(self.text) / self.total_time
 
 
-class Spice:
-    def __init__(self, model):
-        self.model = model
-
-        if "gpt" in self.model:
-            self._client = WrappedOpenAIClient()
-        elif "claude" in self.model:
-            self._client = WrappedAnthropicClient()
+def _get_client(provider):
+    if provider is None:
+        if os.getenv("anthropic_api_key"):
+            provider = "anthropic"
+        elif os.getenv("OPENAI_API_KEY"):
+            provider = "openai"
+        elif os.getenv("AZURE_OPENAI_KEY") and os.getenv("AZURE_OPENAI_ENDPOINT"):
+            provider = "azure"
         else:
-            raise ValueError(f"Unknown model {model}")
+            raise SpiceError("No recognized API keys set")
 
-    async def call_llm(self, system_message, messages, stream=False):
+    if provider == "anthropic":
+        key = os.getenv("ANTHROPIC_API_KEY")
+        if key is None:
+            raise SpiceError("ANTHROPIC_API_KEY not set")
+        return WrappedAnthropicClient(key)
+    elif provider == "openai":
+        base_url = os.getenv("OPENAI_API_BASE")
+        key = os.getenv("OPENAI_API_KEY")
+        if key is None:
+            if base_url:
+                key = "dummy_key_base_url"
+            else:
+                raise SpiceError("OPENAI_API_KEY not set")
+        return WrappedOpenAIClient(key, base_url)
+    elif provider == "azure":
+        key = os.getenv("AZURE_OPENAI_KEY")
+        endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
+        if key is None:
+            raise SpiceError("AZURE_OPENAI_KEY not set")
+        if endpoint is None:
+            raise SpiceError("AZURE_OPENAI_ENDPOINT not set")
+        return WrappedAzureClient(key, endpoint)
+    else:
+        raise SpiceError(f"Unknown provider: {provider}")
+
+
+class Spice:
+    def __init__(self, provider=None):
+        self._client = _get_client(provider)
+
+    async def call_llm(
+        self, model, system_message, messages, stream=False, temperature=None, max_tokens=None, response_format=None
+    ):
         start_time = timer()
         chat_completion_or_stream = await self._client.get_chat_completion_or_stream(
-            self.model, system_message, messages, stream
+            model, system_message, messages, stream, temperature, max_tokens, response_format
         )
 
         if stream:
@@ -115,7 +147,9 @@ class Spice:
 
 class WrappedClient(ABC):
     @abstractmethod
-    async def get_chat_completion_or_stream(self, model, system_message, messages, stream): ...
+    async def get_chat_completion_or_stream(
+        self, model, system_message, messages, stream, temperature, max_tokens, response_format
+    ): ...
 
     @abstractmethod
     def process_chunk(self, chunk): ...
@@ -128,21 +162,31 @@ class WrappedClient(ABC):
 
 
 class WrappedOpenAIClient(WrappedClient):
-    def __init__(self):
-        self._client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    def __init__(self, key, base_url=None):
+        self._client = AsyncOpenAI(api_key=key, base_url=base_url)
 
-    async def get_chat_completion_or_stream(self, model, system_message, messages, stream):
+    async def get_chat_completion_or_stream(
+        self, model, system_message, messages, stream, temperature, max_tokens, response_format
+    ):
         _messages = [
             {
                 "role": "system",
                 "content": system_message,
             }
         ] + messages
+
+        # WrappedOpenAIClient can be used with a proxy to a non openai llm, which may not support response_format
+        maybe_response_format_kwargs = (
+            {"response_format": response_format} if response_format not in [None, "text"] else {}
+        )
+
         return await self._client.chat.completions.create(
-            messages=_messages,
             model=model,
-            temperature=0.3,
+            messages=_messages,
             stream=stream,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            **maybe_response_format_kwargs,
         )
 
     def process_chunk(self, chunk):
@@ -157,18 +201,39 @@ class WrappedOpenAIClient(WrappedClient):
         return usage.prompt_tokens, usage.completion_tokens
 
 
-class WrappedAnthropicClient(WrappedClient):
-    def __init__(self):
-        self._client = AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+class WrappedAzureClient(WrappedOpenAIClient):
+    def __init__(self, key, endpoint):
+        self._client = AsyncAzureOpenAI(
+            api_key=key,
+            api_version="2023-12-01-preview",
+            azure_endpoint=endpoint,
+        )
 
-    async def get_chat_completion_or_stream(self, model, system_message, messages, stream):
+
+class WrappedAnthropicClient(WrappedClient):
+    def __init__(self, key):
+        self._client = AsyncAnthropic(api_key=key)
+
+    async def get_chat_completion_or_stream(
+        self, model, system_message, messages, stream, temperature, max_tokens, response_format
+    ):
+        if response_format is not None:
+            raise SpiceError("response_format not supported by anthropic")
+
+        # max_tokens is required by anthropic api
+        if max_tokens is None:
+            max_tokens = 4096
+
+        # temperature is optional but can't be None
+        maybe_temperature_kwargs = {"temperature": temperature} if temperature is not None else {}
+
         return await self._client.messages.create(
-            max_tokens=1024,
+            model=model,
             system=system_message,
             messages=messages,
-            model=model,
-            temperature=0.3,
             stream=stream,
+            max_tokens=max_tokens,
+            **maybe_temperature_kwargs,
         )
 
     def process_chunk(self, chunk):

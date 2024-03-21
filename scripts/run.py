@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from spice import Spice
 
 
-def get_model(model_hint):
+def get_provider_and_model(model_hint):
     model_hint = str(model_hint).lower()
 
     models_list = [
@@ -23,19 +23,24 @@ def get_model(model_hint):
     for model in models_list:
         if model_hint in model:
             print("Using model:", model)
-            return model
+            if "gpt" in model:
+                return "openai", model
+            elif "claude" in model:
+                return "anthropic", model
+            else:
+                raise ValueError(f"Unknown provider for model: {model}")
 
 
 async def run(model="", stream=False):
-    model = get_model(model)
+    provider, model = get_provider_and_model(model)
     system_message = "You are a helpful assistant."
     messages = [
         {"role": "user", "content": "list 5 random words"},
     ]
 
-    client = Spice(model=model)
+    client = Spice(provider)
 
-    response = await client.call_llm(system_message, messages, stream=stream)
+    response = await client.call_llm(model, system_message, messages, stream=stream)
 
     print(">>>>>>>>>>>>>")
     if stream:
