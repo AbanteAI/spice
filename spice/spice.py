@@ -41,6 +41,7 @@ class SpiceResponse:
     def finalize(self, text, input_tokens, output_tokens):
         self._end_time = timer()
         self._text = text
+        # TODO: if input/output tokens weren't set (like OpenAI when streaming), count them and set here
         self.input_tokens = input_tokens
         self.output_tokens = output_tokens
         # TODO: ensure callback is called even if there's an exception or keyboard interrupt
