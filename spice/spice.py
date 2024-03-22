@@ -65,6 +65,7 @@ def _get_client(provider):
             provider = "azure"
         else:
             raise SpiceError("No recognized API keys set")
+        print(f"Using provider: {provider}")
 
     if provider == "anthropic":
         key = os.getenv("ANTHROPIC_API_KEY")
@@ -208,7 +209,7 @@ class WrappedAnthropicClient(WrappedClient):
             system = messages[0]["content"]
             messages = messages[1:]
 
-        if response_format is not None:
+        if response_format not in [None, "text"]:
             raise SpiceError("response_format not supported by anthropic")
 
         # max_tokens is required by anthropic api
