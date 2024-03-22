@@ -1,5 +1,6 @@
 import os
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from timeit import default_timer as timer
 
 from anthropic import AsyncAnthropic
@@ -13,16 +14,38 @@ class SpiceError(Exception):
     pass
 
 
+@dataclass
+class SpiceCallArgs:
+    model: str
+    messages: list[dict]
+    stream: bool = False
+    temperature: float = None
+    max_tokens: int = None
+    response_format: dict = None
+
+
 class SpiceResponse:
-    def __init__(self, stream=None, text=None, cost=None, input_tokens=None, output_tokens=None):
-        self._stream = stream
-        self._text = text
-        self._cost = cost
-        self._start_time = None
+    def __init__(self, call_args, logging_callback=None):
+        self._call_args = call_args
+        self._logging_callback = logging_callback
+
+        self._stream = None
+        self._text = None
+        self._start_time = timer()
         self._first_token_time = None
         self._end_time = None
+        # TODO: should these be _input_tokens and _output_tokens?
+        self.input_tokens = None
+        self.output_tokens = None
+
+    def finalize(self, text, input_tokens, output_tokens):
+        self._end_time = timer()
+        self._text = text
         self.input_tokens = input_tokens
         self.output_tokens = output_tokens
+        # TODO: ensure callback is called even if there's an exception or keyboard interrupt
+        if self._logging_callback is not None:
+            self._logging_callback(self)
 
     @property
     def stream(self):
@@ -97,55 +120,74 @@ class Spice:
     def __init__(self, provider=None):
         self._client = _get_client(provider)
 
-    async def call_llm(self, model, messages, stream=False, temperature=None, max_tokens=None, response_format=None):
+    async def call_llm(
+        self,
+        model,
+        messages,
+        stream=False,
+        temperature=None,
+        max_tokens=None,
+        response_format=None,
+        logging_callback=None,
+    ):
         # not all providers support response format
         if response_format is not None:
             if response_format == {"type": "text"}:
                 response_format = None
 
-        start_time = timer()
+        response = SpiceResponse(
+            call_args=SpiceCallArgs(
+                model=model,
+                messages=messages,
+                stream=stream,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                response_format=response_format,
+            ),
+            logging_callback=logging_callback,
+        )
+
         chat_completion_or_stream = await self._client.get_chat_completion_or_stream(
             model, messages, stream, temperature, max_tokens, response_format
         )
 
         if stream:
-            response = await self._get_streaming_response(chat_completion_or_stream)
+            await self._get_streaming_response(chat_completion_or_stream, response)
         else:
             input_tokens, output_tokens = self._client.get_input_and_output_tokens(chat_completion_or_stream)
-            response = SpiceResponse(
+            response.finalize(
                 text=self._client.extract_text(chat_completion_or_stream),
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
             )
-            response._end_time = timer()
-
-        response._start_time = start_time
 
         return response
 
-    async def _get_streaming_response(self, stream):
+    async def _get_streaming_response(self, stream, response):
         text_list = []
+        input_tokens = None
+        output_tokens = None
 
         async def wrapped_stream():
             async for chunk in stream:
-                content, input_tokens, output_tokens = self._client.process_chunk(chunk)
-                if input_tokens is not None:
-                    response.input_tokens = input_tokens
-                if output_tokens is not None:
-                    response.output_tokens = output_tokens
+                content, _input_tokens, _output_tokens = self._client.process_chunk(chunk)
+                if _input_tokens is not None:
+                    input_tokens = _input_tokens
+                if _output_tokens is not None:
+                    output_tokens = _output_tokens
                 if content is not None:
                     if response._first_token_time is None:
                         response._first_token_time = timer()
                     text_list.append(content)
                     yield content
 
-            response._text = "".join(text_list)
-            response._end_time = timer()
+            response.finalize(
+                text="".join(text_list),
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+            )
 
-        response = SpiceResponse(
-            stream=wrapped_stream,
-        )
-
+        response._stream = wrapped_stream
         return response
 
 

@@ -31,6 +31,14 @@ def get_provider_and_model(model_hint):
                 raise ValueError(f"Unknown provider for model: {model}")
 
 
+def display_stats(response):
+    input_tokens = response.input_tokens
+    output_tokens = response.output_tokens
+    total_time = response.total_time
+
+    print(f"\n\nlogged: {input_tokens} input tokens, {output_tokens} output tokens, {total_time:.2f}s\n\n")
+
+
 async def run(model="", stream=False):
     provider, model = get_provider_and_model(model)
     messages = [
@@ -40,7 +48,7 @@ async def run(model="", stream=False):
 
     client = Spice(provider)
 
-    response = await client.call_llm(model, messages, stream=stream)
+    response = await client.call_llm(model, messages, stream=stream, logging_callback=display_stats)
 
     print(">>>>>>>>>>>>>")
     if stream:
