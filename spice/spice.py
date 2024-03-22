@@ -26,7 +26,7 @@ class SpiceCallArgs:
 
 class SpiceResponse:
     def __init__(self, call_args, logging_callback=None):
-        self._call_args = call_args
+        self.call_args = call_args
         self._logging_callback = logging_callback
 
         self._stream = None
