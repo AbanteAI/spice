@@ -1,1 +1,1 @@
-from .spice import Spice, SpiceError, SpiceResponse
+from .spice import Spice, SpiceError, SpiceResponse  # noqa
