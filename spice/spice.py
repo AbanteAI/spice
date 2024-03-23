@@ -80,17 +80,6 @@ class SpiceResponse:
 
 
 def _get_client(provider):
-    if provider is None:
-        if os.getenv("anthropic_api_key"):
-            provider = "anthropic"
-        elif os.getenv("OPENAI_API_KEY"):
-            provider = "openai"
-        elif os.getenv("AZURE_OPENAI_KEY") and os.getenv("AZURE_OPENAI_ENDPOINT"):
-            provider = "azure"
-        else:
-            raise SpiceError("No recognized API keys set")
-        print(f"Using provider: {provider}")
-
     if provider == "anthropic":
         key = os.getenv("ANTHROPIC_API_KEY")
         if key is None:
@@ -117,20 +106,101 @@ def _get_client(provider):
         raise SpiceError(f"Unknown provider: {provider}")
 
 
+def _get_clients_from_env():
+    known_providers = {"openai", "anthropic", "azure"}
+    clients = {}
+    for provider in known_providers:
+        try:
+            clients[provider] = _get_client(provider)
+        except SpiceError:
+            pass
+    if not clients:
+        raise SpiceError("No known providers found in environment")
+    return clients
+
+
+_model_info = {
+    "gpt-4-0125-preview": {"provider": "openai"},
+    "gpt-3.5-turbo-0125": {"provider": "openai"},
+    "claude-3-opus-20240229": {"provider": "anthropic"},
+    "claude-3-haiku-20240307": {"provider": "anthropic"},
+}
+
+
+def _get_provider_from_model_name(model):
+    if model not in _model_info:
+        raise SpiceError(f"Unknown provider for model: {model}")
+    return _model_info[model]["provider"]
+
+
+def _validate_model_aliases(model_aliases, clients):
+    for alias, model_dict in model_aliases.items():
+        model_name = model_dict["model"]
+        if "provider" in model_dict:
+            provider = model_dict["provider"]
+        else:
+            provider = _get_provider_from_model_name(model_name)
+        if provider not in clients:
+            raise SpiceError(f"Provider {provider} is not set up for model f{model_name} ({alias})")
+
+
 class Spice:
-    def __init__(self, provider=None):
-        self._client = _get_client(provider)
+    def __init__(self, default_model=None, default_provider=None, model_aliases=None):
+        self._default_model = default_model
+
+        if default_model is not None:
+            if model_aliases is not None:
+                raise SpiceError("model_aliases not supported when default_model is set")
+            self._model_aliases = None
+            if default_provider is None:
+                default_provider = _get_provider_from_model_name(default_model)
+            self._default_client = _get_client(default_provider)
+        else:
+            if default_provider is not None:
+                self._default_client = _get_client(default_provider)
+            else:
+                self._default_client = None
+                self._clients = _get_clients_from_env()
+
+            self._model_aliases = model_aliases
+            if model_aliases is not None:
+                _validate_model_aliases(
+                    self._model_aliases,
+                    self._clients if self._default_client is None else {default_provider: self._default_client},
+                )
 
     async def call_llm(
         self,
-        model,
         messages,
+        model=None,
         stream=False,
         temperature=None,
         max_tokens=None,
         response_format=None,
         logging_callback=None,
     ):
+        if model is None:
+            if self._default_model is None:
+                raise SpiceError("model argument is required when default_model is not set")
+            model = self._default_model
+        else:
+            if self._default_model is not None:
+                raise SpiceError("model argument cannot be used when default_model is set")
+
+        if self._model_aliases is not None:
+            if model in self._model_aliases:
+                model = self._model_aliases[model]["model"]
+            else:
+                raise SpiceError(f"Unknown model alias: {model}")
+
+        if self._default_client is not None:
+            client = self._default_client
+        else:
+            provider = _get_provider_from_model_name(model)
+            if provider not in self._clients:
+                raise SpiceError(f"Provider {provider} is not set up for model {model}")
+            client = self._clients[provider]
+
         # not all providers support response format
         if response_format is not None:
             if response_format == {"type": "text"}:
@@ -148,30 +218,31 @@ class Spice:
             logging_callback=logging_callback,
         )
 
-        chat_completion_or_stream = await self._client.get_chat_completion_or_stream(
+        chat_completion_or_stream = await client.get_chat_completion_or_stream(
             model, messages, stream, temperature, max_tokens, response_format
         )
 
         if stream:
-            await self._get_streaming_response(chat_completion_or_stream, response)
+            await self._get_streaming_response(client, chat_completion_or_stream, response)
         else:
-            input_tokens, output_tokens = self._client.get_input_and_output_tokens(chat_completion_or_stream)
+            input_tokens, output_tokens = client.get_input_and_output_tokens(chat_completion_or_stream)
             response.finalize(
-                text=self._client.extract_text(chat_completion_or_stream),
+                text=client.extract_text(chat_completion_or_stream),
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
             )
 
         return response
 
-    async def _get_streaming_response(self, stream, response):
+    async def _get_streaming_response(self, client, stream, response):
         text_list = []
-        input_tokens = None
-        output_tokens = None
 
         async def wrapped_stream():
+            input_tokens = None
+            output_tokens = None
+
             async for chunk in stream:
-                content, _input_tokens, _output_tokens = self._client.process_chunk(chunk)
+                content, _input_tokens, _output_tokens = client.process_chunk(chunk)
                 if _input_tokens is not None:
                     input_tokens = _input_tokens
                 if _output_tokens is not None:

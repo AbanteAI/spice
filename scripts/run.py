@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from spice import Spice
 
 
+# TODO move to library utils?
 def get_provider_and_model(model_hint):
     model_hint = str(model_hint).lower()
 
@@ -40,15 +41,15 @@ def display_stats(response):
 
 
 async def run(model="", stream=False):
-    provider, model = get_provider_and_model(model)
+    _, model = get_provider_and_model(model)
     messages = [
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "list 5 random words"},
     ]
 
-    client = Spice(provider)
+    client = Spice(model)
 
-    response = await client.call_llm(model, messages, stream=stream, logging_callback=display_stats)
+    response = await client.call_llm(messages=messages, stream=stream, logging_callback=display_stats)
 
     print(">>>>>>>>>>>>>")
     if stream:
