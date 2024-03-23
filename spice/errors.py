@@ -1,0 +1,2 @@
+class SpiceError(Exception):
+    pass

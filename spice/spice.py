@@ -1,17 +1,13 @@
-import os
-from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from timeit import default_timer as timer
 
-from anthropic import AsyncAnthropic
-from dotenv import load_dotenv
-from openai import AsyncAzureOpenAI, AsyncOpenAI
-
-load_dotenv()
-
-
-class SpiceError(Exception):
-    pass
+from spice.client_manager import (
+    _get_client,
+    _get_clients_from_env,
+    _get_provider_from_model_name,
+    _validate_model_aliases,
+)
+from spice.errors import SpiceError
 
 
 @dataclass
@@ -77,71 +73,6 @@ class SpiceResponse:
     @property
     def characters_per_second(self):
         return len(self.text) / self.total_time
-
-
-def _get_client(provider):
-    if provider == "anthropic":
-        key = os.getenv("ANTHROPIC_API_KEY")
-        if key is None:
-            raise SpiceError("ANTHROPIC_API_KEY not set")
-        return WrappedAnthropicClient(key)
-    elif provider == "openai":
-        base_url = os.getenv("OPENAI_API_BASE")
-        key = os.getenv("OPENAI_API_KEY")
-        if key is None:
-            if base_url:
-                key = "dummy_key_base_url"
-            else:
-                raise SpiceError("OPENAI_API_KEY not set")
-        return WrappedOpenAIClient(key, base_url)
-    elif provider == "azure":
-        key = os.getenv("AZURE_OPENAI_KEY")
-        endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
-        if key is None:
-            raise SpiceError("AZURE_OPENAI_KEY not set")
-        if endpoint is None:
-            raise SpiceError("AZURE_OPENAI_ENDPOINT not set")
-        return WrappedAzureClient(key, endpoint)
-    else:
-        raise SpiceError(f"Unknown provider: {provider}")
-
-
-def _get_clients_from_env():
-    known_providers = {"openai", "anthropic", "azure"}
-    clients = {}
-    for provider in known_providers:
-        try:
-            clients[provider] = _get_client(provider)
-        except SpiceError:
-            pass
-    if not clients:
-        raise SpiceError("No known providers found in environment")
-    return clients
-
-
-_model_info = {
-    "gpt-4-0125-preview": {"provider": "openai"},
-    "gpt-3.5-turbo-0125": {"provider": "openai"},
-    "claude-3-opus-20240229": {"provider": "anthropic"},
-    "claude-3-haiku-20240307": {"provider": "anthropic"},
-}
-
-
-def _get_provider_from_model_name(model):
-    if model not in _model_info:
-        raise SpiceError(f"Unknown provider for model: {model}")
-    return _model_info[model]["provider"]
-
-
-def _validate_model_aliases(model_aliases, clients):
-    for alias, model_dict in model_aliases.items():
-        model_name = model_dict["model"]
-        if "provider" in model_dict:
-            provider = model_dict["provider"]
-        else:
-            provider = _get_provider_from_model_name(model_name)
-        if provider not in clients:
-            raise SpiceError(f"Provider {provider} is not set up for model f{model_name} ({alias})")
 
 
 class Spice:
@@ -261,104 +192,3 @@ class Spice:
 
         response._stream = wrapped_stream
         return response
-
-
-class WrappedClient(ABC):
-    @abstractmethod
-    async def get_chat_completion_or_stream(
-        self, model, messages, stream, temperature, max_tokens, response_format
-    ): ...
-
-    @abstractmethod
-    def process_chunk(self, chunk): ...
-
-    @abstractmethod
-    def extract_text(self, chat_completion): ...
-
-    @abstractmethod
-    def get_input_and_output_tokens(self, chat_completion): ...
-
-
-class WrappedOpenAIClient(WrappedClient):
-    def __init__(self, key, base_url=None):
-        self._client = AsyncOpenAI(api_key=key, base_url=base_url)
-
-    async def get_chat_completion_or_stream(self, model, messages, stream, temperature, max_tokens, response_format):
-        # WrappedOpenAIClient can be used with a proxy to a non openai llm, which may not support response_format
-        maybe_response_format_kwargs = {"response_format": response_format} if response_format is not None else {}
-
-        return await self._client.chat.completions.create(
-            model=model,
-            messages=messages,
-            stream=stream,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            **maybe_response_format_kwargs,
-        )
-
-    def process_chunk(self, chunk):
-        content = chunk.choices[0].delta.content
-        return content, None, None
-
-    def extract_text(self, chat_completion):
-        return chat_completion.choices[0].message.content
-
-    def get_input_and_output_tokens(self, chat_completion):
-        usage = chat_completion.usage
-        return usage.prompt_tokens, usage.completion_tokens
-
-
-class WrappedAzureClient(WrappedOpenAIClient):
-    def __init__(self, key, endpoint):
-        self._client = AsyncAzureOpenAI(
-            api_key=key,
-            api_version="2023-12-01-preview",
-            azure_endpoint=endpoint,
-        )
-
-
-class WrappedAnthropicClient(WrappedClient):
-    def __init__(self, key):
-        self._client = AsyncAnthropic(api_key=key)
-
-    async def get_chat_completion_or_stream(self, model, messages, stream, temperature, max_tokens, response_format):
-        if messages[0]["role"] == "system":
-            system = messages[0]["content"]
-            messages = messages[1:]
-
-        if response_format is not None:
-            raise SpiceError("response_format not supported by anthropic")
-
-        # max_tokens is required by anthropic api
-        if max_tokens is None:
-            max_tokens = 4096
-
-        # temperature is optional but can't be None
-        maybe_temperature_kwargs = {"temperature": temperature} if temperature is not None else {}
-
-        return await self._client.messages.create(
-            model=model,
-            system=system,
-            messages=messages,
-            stream=stream,
-            max_tokens=max_tokens,
-            **maybe_temperature_kwargs,
-        )
-
-    def process_chunk(self, chunk):
-        content = None
-        input_tokens = None
-        output_tokens = None
-        if chunk.type == "content_block_delta":
-            content = chunk.delta.text
-        elif chunk.type == "message_start":
-            input_tokens = chunk.message.usage.input_tokens
-        elif chunk.type == "message_delta":
-            output_tokens = chunk.usage.output_tokens
-        return content, input_tokens, output_tokens
-
-    def extract_text(self, chat_completion):
-        return chat_completion.content[0].text
-
-    def get_input_and_output_tokens(self, chat_completion):
-        return chat_completion.usage.input_tokens, chat_completion.usage.output_tokens
