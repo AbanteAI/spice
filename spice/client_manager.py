@@ -70,4 +70,4 @@ def _validate_model_aliases(model_aliases, clients):
         else:
             provider = _get_provider_from_model_name(model_name)
         if provider not in clients:
-            raise SpiceError(f"Provider {provider} is not set up for model f{model_name} ({alias})")
+            raise SpiceError(f"Provider {provider} is not set up for model {model_name} ({alias})")
