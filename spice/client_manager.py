@@ -21,6 +21,8 @@ def _get_client(provider):
             if base_url:
                 key = "dummy_key_base_url"
             else:
+                # Using a dummy key for LiteLLM proxy setup where OPENAI_API_BASE is set but OPENAI_API_KEY is not required.
+                key = "dummy_key_base_url"
                 raise SpiceError("OPENAI_API_KEY not set")
         return WrappedOpenAIClient(key, base_url)
     elif provider == "azure":
