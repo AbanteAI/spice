@@ -144,22 +144,14 @@ def _validate_model_aliases(model_aliases, clients):
             raise SpiceError(f"Provider {provider} is not set up for model f{model_name} ({alias})")
 
 
-class Spice:
-    def __init__(self, default_model=None, default_provider=None, model_aliases=None):
+    def __init__(self):
         """
-        Initializes the Spice client with optional default settings.
-        
-        :param default_model: The default model to use for calls if no model is specified.
-        :param default_provider: The default provider to use if no provider is specified.
-        :param model_aliases: A dictionary mapping model aliases to their respective model names and providers.
+        Initializes the Spice client.
         """
-        self._default_model = default_model
-        self._default_provider = default_provider
-        self._model_aliases = model_aliases
+        self._client_manager = ClientManager()
         self._client_manager = ClientManager()
 
-        if default_model and model_aliases:
-            raise SpiceError("model_aliases not supported when default_model is set")
+        # Removed the check for model_aliases when default_model is set as it's now handled in ClientManager
 
     async def call_llm(
         self,
@@ -171,15 +163,10 @@ class Spice:
         response_format=None,
         logging_callback=None,
     ):
-        if model is None:
-            if self._default_model is None:
-                raise SpiceError("model argument is required when default_model is not set")
-            model = self._default_model
-        else:
-            if self._default_model is not None:
-                raise SpiceError("model argument cannot be used when default_model is set")
+        # Simplified model handling as it's now managed by ClientManager
 
-        client = self._client_manager.get_client(model=model, default_provider=self._default_provider, model_aliases=self._model_aliases)
+        # Updated to use ClientManager without directly handling model or provider details
+        client = self._client_manager.get_client(model=model)
 
         # not all providers support response format
         if response_format is not None:
@@ -243,16 +230,25 @@ class Spice:
         return response
 
 
-class ClientManager:
-    def __init__(self):
+    def __init__(self, default_model=None, default_provider=None, model_aliases=None):
+        """
+        Initializes the ClientManager with optional default settings.
+        
+        :param default_model: The default model to use for calls if no model is specified.
+        :param default_provider: The default provider to use if no provider is specified.
+        :param model_aliases: A dictionary mapping model aliases to their respective model names and providers.
+        """
+        self._default_model = default_model
+        self._default_provider = default_provider
+        self._model_aliases = model_aliases
         self._clients = _get_clients_from_env()
 
-    def get_client(self, model=None, default_provider=None, model_aliases=None):
-        if model_aliases is not None and model in model_aliases:
-            model = model_aliases[model]["model"]
+    def get_client(self, model=None):
+        if self._model_aliases is not None and model in self._model_aliases:
+            model = self._model_aliases[model]["model"]
 
-        if default_provider:
-            return _get_client(default_provider)
+        if self._default_provider:
+            return _get_client(self._default_provider)
 
         provider = _get_provider_from_model_name(model)
         if provider not in self._clients:
