@@ -146,28 +146,20 @@ def _validate_model_aliases(model_aliases, clients):
 
 class Spice:
     def __init__(self, default_model=None, default_provider=None, model_aliases=None):
+        """
+        Initializes the Spice client with optional default settings.
+        
+        :param default_model: The default model to use for calls if no model is specified.
+        :param default_provider: The default provider to use if no provider is specified.
+        :param model_aliases: A dictionary mapping model aliases to their respective model names and providers.
+        """
         self._default_model = default_model
+        self._default_provider = default_provider
+        self._model_aliases = model_aliases
+        self._client_manager = ClientManager()
 
-        if default_model is not None:
-            if model_aliases is not None:
-                raise SpiceError("model_aliases not supported when default_model is set")
-            self._model_aliases = None
-            if default_provider is None:
-                default_provider = _get_provider_from_model_name(default_model)
-            self._default_client = _get_client(default_provider)
-        else:
-            if default_provider is not None:
-                self._default_client = _get_client(default_provider)
-            else:
-                self._default_client = None
-                self._clients = _get_clients_from_env()
-
-            self._model_aliases = model_aliases
-            if model_aliases is not None:
-                _validate_model_aliases(
-                    self._model_aliases,
-                    self._clients if self._default_client is None else {default_provider: self._default_client},
-                )
+        if default_model and model_aliases:
+            raise SpiceError("model_aliases not supported when default_model is set")
 
     async def call_llm(
         self,
@@ -187,19 +179,7 @@ class Spice:
             if self._default_model is not None:
                 raise SpiceError("model argument cannot be used when default_model is set")
 
-        if self._model_aliases is not None:
-            if model in self._model_aliases:
-                model = self._model_aliases[model]["model"]
-            else:
-                raise SpiceError(f"Unknown model alias: {model}")
-
-        if self._default_client is not None:
-            client = self._default_client
-        else:
-            provider = _get_provider_from_model_name(model)
-            if provider not in self._clients:
-                raise SpiceError(f"Provider {provider} is not set up for model {model}")
-            client = self._clients[provider]
+        client = self._client_manager.get_client(model=model, default_provider=self._default_provider, model_aliases=self._model_aliases)
 
         # not all providers support response format
         if response_format is not None:
@@ -263,6 +243,21 @@ class Spice:
         return response
 
 
+class ClientManager:
+    def __init__(self):
+        self._clients = _get_clients_from_env()
+
+    def get_client(self, model=None, default_provider=None, model_aliases=None):
+        if model_aliases is not None and model in model_aliases:
+            model = model_aliases[model]["model"]
+
+        if default_provider:
+            return _get_client(default_provider)
+
+        provider = _get_provider_from_model_name(model)
+        if provider not in self._clients:
+            raise SpiceError(f"Provider {provider} is not set up for model {model}")
+        return self._clients[provider]
 class WrappedClient(ABC):
     @abstractmethod
     async def get_chat_completion_or_stream(
