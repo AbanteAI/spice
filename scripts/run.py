@@ -44,6 +44,23 @@ async def streaming_example():
     print(f"Input/Output tokens: {response.input_tokens}/{response.output_tokens}")
 
 
+async def streaming_example_with_callback():
+    client = Spice(model="gpt-3.5-turbo-0125")
+
+    messages = [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "list 5 random words"},
+    ]
+
+    # pass a logging function to get a callback after the stream completes
+    response = await client.call_llm(
+        messages=messages, stream=True, logging_callback=lambda response: print(response.text)
+    )
+
+    async for text in response.stream():
+        print(text, end="", flush=True)
+
+
 async def multiple_providers_example():
     # alias models for easy configuration, even mixing providers
     model_aliases = {
@@ -76,6 +93,8 @@ async def run_all_examples():
     await basic_example()
     print("\n\nRunning streaming example:")
     await streaming_example()
+    print("\n\nRunning streaming example with callback:")
+    await streaming_example_with_callback()
     print("\n\nRunning multiple providers example:")
     await multiple_providers_example()
 
