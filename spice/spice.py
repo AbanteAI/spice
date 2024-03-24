@@ -76,19 +76,19 @@ class SpiceResponse:
 
 
 class Spice:
-    def __init__(self, default_model=None, default_provider=None, model_aliases=None):
-        self._default_model = default_model
+    def __init__(self, model=None, provider=None, model_aliases=None):
+        self._default_model = model
 
-        if default_model is not None:
+        if model is not None:
             if model_aliases is not None:
-                raise SpiceError("model_aliases not supported when default_model is set")
+                raise SpiceError("model_aliases not supported when model is set")
             self._model_aliases = None
-            if default_provider is None:
-                default_provider = _get_provider_from_model_name(default_model)
-            self._default_client = _get_client(default_provider)
+            if provider is None:
+                provider = _get_provider_from_model_name(model)
+            self._default_client = _get_client(provider)
         else:
-            if default_provider is not None:
-                self._default_client = _get_client(default_provider)
+            if provider is not None:
+                self._default_client = _get_client(provider)
             else:
                 self._default_client = None
                 self._clients = _get_clients_from_env()
@@ -97,7 +97,7 @@ class Spice:
             if model_aliases is not None:
                 _validate_model_aliases(
                     self._model_aliases,
-                    self._clients if self._default_client is None else {default_provider: self._default_client},
+                    self._clients if self._default_client is None else {provider: self._default_client},
                 )
 
     async def call_llm(
@@ -112,11 +112,8 @@ class Spice:
     ):
         if model is None:
             if self._default_model is None:
-                raise SpiceError("model argument is required when default_model is not set")
+                raise SpiceError("model argument is required when default model is not set at initialization")
             model = self._default_model
-        else:
-            if self._default_model is not None:
-                raise SpiceError("model argument cannot be used when default_model is set")
 
         if self._model_aliases is not None:
             if model in self._model_aliases:
