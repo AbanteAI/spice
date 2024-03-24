@@ -7,29 +7,7 @@ import fire
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from spice import Spice
-
-
-# TODO move to library utils?
-def get_provider_and_model(model_hint):
-    model_hint = str(model_hint).lower()
-
-    models_list = [
-        "gpt-4-0125-preview",
-        "gpt-3.5-turbo-0125",
-        "claude-3-opus-20240229",
-        "claude-3-haiku-20240307",
-    ]
-
-    # return first match
-    for model in models_list:
-        if model_hint in model:
-            print("Using model:", model)
-            if "gpt" in model:
-                return "openai", model
-            elif "claude" in model:
-                return "anthropic", model
-            else:
-                raise ValueError(f"Unknown provider for model: {model}")
+from spice.utils import fuzzy_model_lookup
 
 
 def display_stats(response):
@@ -41,7 +19,7 @@ def display_stats(response):
 
 
 async def run(model="", stream=False):
-    _, model = get_provider_and_model(model)
+    model = fuzzy_model_lookup(model)
     messages = [
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "list 5 random words"},
