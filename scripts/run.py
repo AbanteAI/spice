@@ -2,53 +2,83 @@ import asyncio
 import os
 import sys
 
-import fire
-
+# Modify sys.path to ensure the script can run even when it's not part of the installed library.
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from spice import Spice
-from spice.utils import fuzzy_model_lookup
 
 
-def display_stats(response):
-    input_tokens = response.input_tokens
-    output_tokens = response.output_tokens
-    total_time = response.total_time
+async def basic_example():
+    client = Spice()
 
-    print(f"\n\nlogged: {input_tokens} input tokens, {output_tokens} output tokens, {total_time:.2f}s\n\n")
-
-
-async def run(model="", stream=False):
-    model = fuzzy_model_lookup(model)
     messages = [
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "list 5 random words"},
     ]
 
-    client = Spice(model)
+    response = await client.call_llm(messages=messages, model="gpt-4-0125-preview")
 
-    response = await client.call_llm(messages=messages, stream=stream, logging_callback=display_stats)
+    print(response.text)
 
-    print(">>>>>>>>>>>>>")
-    if stream:
-        async for t in response.stream():
-            print(t, end="", flush=True)
-    else:
-        print(response.text)
-    print("\n<<<<<<<<<<<<<")
 
+async def streaming_example():
+    # you can set a default model for the client instead of passing it with each call
+    client = Spice(model="claude-3-opus-20240229")
+
+    messages = [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "list 5 random words"},
+    ]
+
+    response = await client.call_llm(messages=messages, stream=True)
+
+    async for text in response.stream():
+        print(text, end="", flush=True)
+
+    # response always includes the final text, no need build it from the stream yourself
+    print(response.text)
+
+    # response also includes helpful stats
     print(f"Took {response.total_time:.2f}s")
-
-    if stream:
-        print(f"Time to first token: {response.time_to_first_token:.2f}s")
-
+    print(f"Time to first token: {response.time_to_first_token:.2f}s")
     print(f"Input/Output tokens: {response.input_tokens}/{response.output_tokens}")
-    print(f"Characters per second: {response.characters_per_second:.2f}")
 
 
-def run_async(model="", stream=False):
-    asyncio.run(run(model, stream))
+async def multiple_providers_example():
+    # alias models for easy configuration, even mixing providers
+    model_aliases = {
+        "task1_model": {"model": "gpt-4-0125-preview"},
+        "task2_model": {"model": "claude-3-opus-20240229"},
+        "task3_model": {"model": "claude-3-haiku-20240307"},
+    }
+
+    client = Spice(model_aliases=model_aliases)
+
+    messages = [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "list 5 random words"},
+    ]
+
+    responses = await asyncio.gather(
+        client.call_llm(messages=messages, model="task1_model"),
+        client.call_llm(messages=messages, model="task2_model"),
+        client.call_llm(messages=messages, model="task3_model"),
+    )
+
+    for i, response in enumerate(responses, 1):
+        print(f"\nModel {i} response:")
+        print(response.text)
+        print(f"Characters per second: {response.characters_per_second:.2f}")
+
+
+async def run_all_examples():
+    print("Running basic example:")
+    await basic_example()
+    print("\n\nRunning streaming example:")
+    await streaming_example()
+    print("\n\nRunning multiple providers example:")
+    await multiple_providers_example()
 
 
 if __name__ == "__main__":
-    fire.Fire(run_async)
+    asyncio.run(run_all_examples())
