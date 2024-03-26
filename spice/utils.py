@@ -1,6 +1,5 @@
 import base64
 import io
-from typing import List, cast
 
 import tiktoken
 from PIL import Image
