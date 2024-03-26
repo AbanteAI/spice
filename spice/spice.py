@@ -8,6 +8,7 @@ from spice.client_manager import (
     _validate_model_aliases,
 )
 from spice.errors import SpiceError
+from spice.utils import count_messages_tokens, count_string_tokens
 
 
 @dataclass
@@ -37,9 +38,17 @@ class SpiceResponse:
     def finalize(self, text, input_tokens, output_tokens):
         self._end_time = timer()
         self._text = text
-        # TODO: if input/output tokens weren't set (like OpenAI when streaming), count them and set here
-        self.input_tokens = input_tokens
-        self.output_tokens = output_tokens
+        # TODO: this message counting methods are just for OpenAI,
+        # if other providers also don't send token counts when streaming
+        # then we need to add counting methods for them as well
+        if input_tokens is None:
+            self.input_tokens = count_messages_tokens(self.call_args.messages, self.call_args.model)
+        else:
+            self.input_tokens = input_tokens
+        if output_tokens is None:
+            self.output_tokens = count_string_tokens(self.text, self.call_args.model, full_message=False)
+        else:
+            self.output_tokens = output_tokens
         # TODO: ensure callback is called even if there's an exception or keyboard interrupt
         if self._logging_callback is not None:
             self._logging_callback(self)
