@@ -1,5 +1,8 @@
 from abc import ABC, abstractmethod
+from contextlib import contextmanager
 
+import anthropic
+import openai
 from anthropic import AsyncAnthropic
 from openai import AsyncAzureOpenAI, AsyncOpenAI
 
@@ -20,6 +23,9 @@ class WrappedClient(ABC):
 
     @abstractmethod
     def get_input_and_output_tokens(self, chat_completion): ...
+
+    @abstractmethod
+    def catch_and_convert_errors(self): ...
 
 
 class WrappedOpenAIClient(WrappedClient):
@@ -49,6 +55,13 @@ class WrappedOpenAIClient(WrappedClient):
     def get_input_and_output_tokens(self, chat_completion):
         usage = chat_completion.usage
         return usage.prompt_tokens, usage.completion_tokens
+
+    @contextmanager
+    def catch_and_convert_errors(self):
+        try:
+            yield
+        except (openai.APIConnectionError, openai.AuthenticationError) as e:
+            raise SpiceError(f"OpenAI Error: {e.message}") from e
 
 
 class WrappedAzureClient(WrappedOpenAIClient):
@@ -105,3 +118,10 @@ class WrappedAnthropicClient(WrappedClient):
 
     def get_input_and_output_tokens(self, chat_completion):
         return chat_completion.usage.input_tokens, chat_completion.usage.output_tokens
+
+    @contextmanager
+    def catch_and_convert_errors(self):
+        try:
+            yield
+        except (anthropic.APIConnectionError, anthropic.AuthenticationError) as e:
+            raise SpiceError(f"Anthropic Error: {e.message}") from e
