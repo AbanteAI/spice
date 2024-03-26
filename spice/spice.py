@@ -155,9 +155,10 @@ class Spice:
             logging_callback=logging_callback,
         )
 
-        chat_completion_or_stream = await client.get_chat_completion_or_stream(
-            model, messages, stream, temperature, max_tokens, response_format
-        )
+        with client.catch_and_convert_errors():
+            chat_completion_or_stream = await client.get_chat_completion_or_stream(
+                model, messages, stream, temperature, max_tokens, response_format
+            )
 
         if stream:
             await self._get_streaming_response(client, chat_completion_or_stream, response)
@@ -178,17 +179,18 @@ class Spice:
             input_tokens = None
             output_tokens = None
 
-            async for chunk in stream:
-                content, _input_tokens, _output_tokens = client.process_chunk(chunk)
-                if _input_tokens is not None:
-                    input_tokens = _input_tokens
-                if _output_tokens is not None:
-                    output_tokens = _output_tokens
-                if content is not None:
-                    if response._first_token_time is None:
-                        response._first_token_time = timer()
-                    text_list.append(content)
-                    yield content
+            with client.catch_and_convert_errors():
+                async for chunk in stream:
+                    content, _input_tokens, _output_tokens = client.process_chunk(chunk)
+                    if _input_tokens is not None:
+                        input_tokens = _input_tokens
+                    if _output_tokens is not None:
+                        output_tokens = _output_tokens
+                    if content is not None:
+                        if response._first_token_time is None:
+                            response._first_token_time = timer()
+                        text_list.append(content)
+                        yield content
 
             response.finalize(
                 text="".join(text_list),
