@@ -31,7 +31,6 @@ class SpiceResponse:
         self._start_time = timer()
         self._first_token_time = None
         self._end_time = None
-        # TODO: should these be _input_tokens and _output_tokens?
         self.input_tokens = None
         self.output_tokens = None
 
@@ -40,7 +39,9 @@ class SpiceResponse:
         self._text = text
         # TODO: this message counting methods are just for OpenAI,
         # if other providers also don't send token counts when streaming
-        # then we need to add counting methods for them as well
+        # then we need to add counting methods for them as well.
+        # TODO: input/output will also be none if streaming is interrupted
+        # so we need to identify the provider here to handle correctly
         if input_tokens is None:
             self.input_tokens = count_messages_tokens(self.call_args.messages, self.call_args.model)
         else:
@@ -179,24 +180,26 @@ class Spice:
             input_tokens = None
             output_tokens = None
 
-            with client.catch_and_convert_errors():
-                async for chunk in stream:
-                    content, _input_tokens, _output_tokens = client.process_chunk(chunk)
-                    if _input_tokens is not None:
-                        input_tokens = _input_tokens
-                    if _output_tokens is not None:
-                        output_tokens = _output_tokens
-                    if content is not None:
-                        if response._first_token_time is None:
-                            response._first_token_time = timer()
-                        text_list.append(content)
-                        yield content
-
-            response.finalize(
-                text="".join(text_list),
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-            )
+            try:
+                with client.catch_and_convert_errors():
+                    async for chunk in stream:
+                        content, _input_tokens, _output_tokens = client.process_chunk(chunk)
+                        if _input_tokens is not None:
+                            input_tokens = _input_tokens
+                        if _output_tokens is not None:
+                            output_tokens = _output_tokens
+                        if content is not None:
+                            if response._first_token_time is None:
+                                response._first_token_time = timer()
+                            text_list.append(content)
+                            yield content
+            finally:
+                # TODO: investigate when exactly this runs - i.e. if there's a keyboard interrupt
+                response.finalize(
+                    text="".join(text_list),
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                )
 
         response._stream = wrapped_stream
         return response
