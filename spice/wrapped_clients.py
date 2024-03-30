@@ -6,7 +6,7 @@ import openai
 from anthropic import AsyncAnthropic
 from openai import AsyncAzureOpenAI, AsyncOpenAI
 
-from spice.errors import SpiceError
+from spice.errors import APIConnectionError, AuthenticationError, SpiceError
 
 
 class WrappedClient(ABC):
@@ -60,8 +60,10 @@ class WrappedOpenAIClient(WrappedClient):
     def catch_and_convert_errors(self):
         try:
             yield
-        except (openai.APIConnectionError, openai.AuthenticationError) as e:
-            raise SpiceError(f"OpenAI Error: {e.message}") from e
+        except openai.APIConnectionError as e:
+            raise APIConnectionError(f"OpenAI Error: {e.message}") from e
+        except openai.AuthenticationError as e:
+            raise AuthenticationError(f"OpenAI Error: {e.message}") from e
 
 
 class WrappedAzureClient(WrappedOpenAIClient):
@@ -123,5 +125,7 @@ class WrappedAnthropicClient(WrappedClient):
     def catch_and_convert_errors(self):
         try:
             yield
-        except (anthropic.APIConnectionError, anthropic.AuthenticationError) as e:
-            raise SpiceError(f"Anthropic Error: {e.message}") from e
+        except anthropic.APIConnectionError as e:
+            raise APIConnectionError(f"Anthropic Error: {e.message}") from e
+        except anthropic.AuthenticationError as e:
+            raise AuthenticationError(f"Anthropic Error: {e.message}") from e

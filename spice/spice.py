@@ -194,7 +194,9 @@ class Spice:
                             text_list.append(content)
                             yield content
             finally:
-                # TODO: investigate when exactly this runs - i.e. if there's a keyboard interrupt
+                # this finally block is executed even if the stream is interrupted,
+                # but it can be delayed - it runs when the reference to the genereator
+                # is garbage collected and there is an await in user code
                 response.finalize(
                     text="".join(text_list),
                     input_tokens=input_tokens,
