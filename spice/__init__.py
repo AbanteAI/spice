@@ -1,2 +1,2 @@
-from .spice import Spice, SpiceError, SpiceResponse  # noqa
-from .errors import AuthenticationError, APIConnectionError  # noqa
+from .spice import Spice, SpiceResponse  # noqa
+from .errors import SpiceError, AuthenticationError, APIConnectionError  # noqa
