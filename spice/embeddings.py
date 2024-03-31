@@ -36,7 +36,6 @@ class SpiceEmbeddings:
             raise SpiceError(f"Unknown embeddings provider: {provider}")
 
     def get_embeddings(self, input_texts: list[str], model: str = "text-embedding-ada-002") -> Embeddings:
-        assert False, "yo"
         embeddings = self.client.embeddings.create(input=input_texts, model=model).data
         sorted_embeddings = sorted(embeddings, key=lambda e: e.index)
         return [result.embedding for result in sorted_embeddings]
