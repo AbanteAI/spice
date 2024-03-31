@@ -51,6 +51,7 @@ def _get_clients_from_env():
 
 _model_info = {
     "gpt-4-0125-preview": {"provider": "openai"},
+    "gpt-4-vision-preview": {"provider": "openai"},
     "gpt-3.5-turbo-0125": {"provider": "openai"},
     "claude-3-opus-20240229": {"provider": "anthropic"},
     "claude-3-haiku-20240307": {"provider": "anthropic"},
