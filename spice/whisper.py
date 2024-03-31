@@ -32,9 +32,9 @@ class SpiceWhisper:
             raise SpiceError(f"Unknown whisper provider: {provider}")
 
     async def get_whisper_transcription(self, audio_path: Path) -> str:
-        async with open(audio_path, "rb") as audio_file:
-            transcript = await self._client.audio.transcriptions.create(
-                model="whisper-1",
-                file=audio_file,
-            )
+        audio_file = open(audio_path, "rb")
+        transcript = await self._client.audio.transcriptions.create(
+            model="whisper-1",
+            file=audio_file,
+        )
         return transcript.text
