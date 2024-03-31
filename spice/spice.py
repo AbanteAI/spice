@@ -144,6 +144,10 @@ class Spice:
             if response_format == {"type": "text"}:
                 response_format = None
 
+        # gpt-4-vision has low default max_tokens
+        if max_tokens is None and model == "gpt-4-vision-preview":
+            max_tokens = 4096
+
         response = SpiceResponse(
             call_args=SpiceCallArgs(
                 model=model,
