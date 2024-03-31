@@ -88,7 +88,23 @@ async def multiple_providers_example():
         print(f"Characters per second: {response.characters_per_second:.2f}")
 
 
+async def azure_example():
+    # use azure deployment name for model
+    client = Spice(model="first-gpt35", provider="azure")
+
+    messages = [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "list 5 random words"},
+    ]
+
+    response = await client.call_llm(messages=messages)
+
+    print(response.text)
+
+
 async def run_all_examples():
+    print("Running Azure example:")
+    await azure_example()
     print("Running basic example:")
     await basic_example()
     print("\n\nRunning streaming example:")
