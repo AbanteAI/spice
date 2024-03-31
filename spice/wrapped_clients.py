@@ -1,10 +1,13 @@
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
+from typing import Any, AsyncIterator, ContextManager, Coroutine, Generator, Optional
 
 import anthropic
 import openai
 from anthropic import AsyncAnthropic
+from anthropic.types import Message, MessageStreamEvent
 from openai import AsyncAzureOpenAI, AsyncOpenAI
+from openai.types.chat import ChatCompletion, ChatCompletionChunk
 
 from spice.errors import APIConnectionError, AuthenticationError, SpiceError
 
@@ -12,20 +15,26 @@ from spice.errors import APIConnectionError, AuthenticationError, SpiceError
 class WrappedClient(ABC):
     @abstractmethod
     async def get_chat_completion_or_stream(
-        self, model, messages, stream, temperature, max_tokens, response_format
-    ): ...
+        self,
+        model: str,
+        messages,
+        stream: bool,
+        temperature: Optional[float],
+        max_tokens: Optional[int],
+        response_format: Optional[dict[str, Any]],
+    ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk] | Message | AsyncIterator[MessageStreamEvent]: ...
 
     @abstractmethod
-    def process_chunk(self, chunk): ...
+    def process_chunk(self, chunk) -> tuple[Optional[str], Optional[int], Optional[int]]: ...
 
     @abstractmethod
-    def extract_text(self, chat_completion): ...
+    def extract_text(self, chat_completion) -> str: ...
 
     @abstractmethod
-    def get_input_and_output_tokens(self, chat_completion): ...
+    def get_input_and_output_tokens(self, chat_completion) -> tuple[int, int]: ...
 
     @abstractmethod
-    def catch_and_convert_errors(self): ...
+    def catch_and_convert_errors(self) -> ContextManager[None]: ...
 
 
 class WrappedOpenAIClient(WrappedClient):
@@ -34,7 +43,9 @@ class WrappedOpenAIClient(WrappedClient):
 
     async def get_chat_completion_or_stream(self, model, messages, stream, temperature, max_tokens, response_format):
         # WrappedOpenAIClient can be used with a proxy to a non openai llm, which may not support response_format
-        maybe_response_format_kwargs = {"response_format": response_format} if response_format is not None else {}
+        maybe_response_format_kwargs: dict[str, Any] = (
+            {"response_format": response_format} if response_format is not None else {}
+        )
 
         return await self._client.chat.completions.create(
             model=model,
@@ -83,6 +94,8 @@ class WrappedAnthropicClient(WrappedClient):
         if messages[0]["role"] == "system":
             system = messages[0]["content"]
             messages = messages[1:]
+        else:
+            system = ""
 
         if response_format is not None:
             raise SpiceError("response_format not supported by anthropic")
@@ -92,7 +105,7 @@ class WrappedAnthropicClient(WrappedClient):
             max_tokens = 4096
 
         # temperature is optional but can't be None
-        maybe_temperature_kwargs = {"temperature": temperature} if temperature is not None else {}
+        maybe_temperature_kwargs: dict[str, Any] = {"temperature": temperature} if temperature is not None else {}
 
         return await self._client.messages.create(
             model=model,

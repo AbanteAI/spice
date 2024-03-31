@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from timeit import default_timer as timer
+from typing import AsyncIterator, Callable, Optional, cast
 
 from spice.client_manager import (
     _get_client,
@@ -16,9 +17,9 @@ class SpiceCallArgs:
     model: str
     messages: list[dict]
     stream: bool = False
-    temperature: float = None
-    max_tokens: int = None
-    response_format: dict = None
+    temperature: Optional[float] = None
+    max_tokens: Optional[int] = None
+    response_format: Optional[dict] = None
 
 
 class SpiceResponse:
@@ -26,10 +27,10 @@ class SpiceResponse:
         self.call_args = call_args
         self._logging_callback = logging_callback
 
-        self._stream = None
+        self._stream: Optional[Callable[[], AsyncIterator[str]]] = None
         self._text = None
         self._start_time = timer()
-        self._first_token_time = None
+        self._first_token_time: Optional[float] = None
         self._end_time = None
         self.input_tokens = None
         self.output_tokens = None
@@ -50,7 +51,6 @@ class SpiceResponse:
             self.output_tokens = count_string_tokens(self.text, self.call_args.model, full_message=False)
         else:
             self.output_tokens = output_tokens
-        # TODO: ensure callback is called even if there's an exception or keyboard interrupt
         if self._logging_callback is not None:
             self._logging_callback(self)
 
@@ -68,16 +68,20 @@ class SpiceResponse:
 
     @property
     def time_to_first_token(self):
-        if self._stream is None:
+        if self._stream is None or self._first_token_time is None:
             raise SpiceError("Time to first token not tracked for non-streaming responses")
         return self._first_token_time - self._start_time
 
     @property
     def total_time(self):
+        if self._end_time is None:
+            raise SpiceError("Total time not tracked! finalize() must be called first.")
         return self._end_time - self._start_time
 
     @property
     def total_tokens(self):
+        if self.input_tokens is None or self.output_tokens is None:
+            raise SpiceError("Token counts not set! finalize() must be called first.")
         return self.input_tokens + self.output_tokens
 
     @property
@@ -162,7 +166,12 @@ class Spice:
 
         with client.catch_and_convert_errors():
             chat_completion_or_stream = await client.get_chat_completion_or_stream(
-                model, messages, stream, temperature, max_tokens, response_format
+                model=model,
+                messages=messages,
+                stream=stream,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                response_format=response_format,
             )
 
         if stream:
@@ -177,10 +186,10 @@ class Spice:
 
         return response
 
-    async def _get_streaming_response(self, client, stream, response):
+    async def _get_streaming_response(self, client, stream, response) -> SpiceResponse:
         text_list = []
 
-        async def wrapped_stream():
+        async def wrapped_stream() -> AsyncIterator[str]:
             input_tokens = None
             output_tokens = None
 
@@ -198,6 +207,7 @@ class Spice:
                             text_list.append(content)
                             yield content
             finally:
+                # TODO: find better way to do this
                 # this finally block is executed even if the stream is interrupted,
                 # but it can be delayed - it runs when the reference to the genereator
                 # is garbage collected and there is an await in user code
