@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from timeit import default_timer as timer
-from typing import AsyncIterator, Callable, Optional, cast
+from typing import AsyncIterator, Callable, Optional
 
 from spice.client_manager import (
     _get_client,
