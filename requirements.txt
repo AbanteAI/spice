@@ -2,3 +2,5 @@ python-dotenv
 openai
 anthropic
 chromadb
+pillow
+tiktoken
