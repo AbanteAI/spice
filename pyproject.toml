@@ -11,5 +11,5 @@ build-backend = "hatchling.build"
 packages=["spice"]
 
 [project]
-name = "spice"
+name = "spiceai"
 version = "0.1.0"
