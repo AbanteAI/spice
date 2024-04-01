@@ -35,8 +35,8 @@ class SpiceResponse:
         self._start_time = timer()
         self._first_token_time: Optional[float] = None
         self._end_time = None
-        self.input_tokens = None
-        self.output_tokens = None
+        self._input_tokens = None
+        self._output_tokens = None
 
     def finalize(self, text: str, input_tokens: Optional[int], output_tokens: Optional[int]):
         self._end_time = timer()
@@ -47,13 +47,13 @@ class SpiceResponse:
         # TODO: input/output will also be none if streaming is interrupted
         # so we need to identify the provider here to handle correctly
         if input_tokens is None:
-            self.input_tokens = count_messages_tokens(self.call_args.messages, self.call_args.model)
+            self._input_tokens = count_messages_tokens(self.call_args.messages, self.call_args.model)
         else:
-            self.input_tokens = input_tokens
+            self._input_tokens = input_tokens
         if output_tokens is None:
-            self.output_tokens = count_string_tokens(self.text, self.call_args.model, full_message=False)
+            self._output_tokens = count_string_tokens(self.text, self.call_args.model, full_message=False)
         else:
-            self.output_tokens = output_tokens
+            self._output_tokens = output_tokens
         if self._logging_callback is not None:
             self._logging_callback(self)
 
@@ -82,10 +82,22 @@ class SpiceResponse:
         return self._end_time - self._start_time
 
     @property
+    def input_tokens(self) -> int:
+        if self._input_tokens is None:
+            raise SpiceError("Input tokens not set! finalize() must be called first.")
+        return self._input_tokens
+
+    @property
+    def output_tokens(self) -> int:
+        if self._output_tokens is None:
+            raise SpiceError("Output tokens not set! finalize() must be called first.")
+        return self._output_tokens
+
+    @property
     def total_tokens(self) -> int:
-        if self.input_tokens is None or self.output_tokens is None:
+        if self._input_tokens is None or self._output_tokens is None:
             raise SpiceError("Token counts not set! finalize() must be called first.")
-        return self.input_tokens + self.output_tokens
+        return self._input_tokens + self._output_tokens
 
     @property
     def characters_per_second(self) -> float:
@@ -119,12 +131,12 @@ class Spice:
 
     async def call_llm(
         self,
-        messages,
+        messages: list[dict[str, str]],
         model: Optional[str] = None,
         stream: bool = False,
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
-        response_format: Optional[dict] = None,
+        response_format: Optional[dict[str, str]] = None,
         logging_callback: Optional[Callable[[SpiceResponse], None]] = None,
     ) -> SpiceResponse:
         if model is None:
