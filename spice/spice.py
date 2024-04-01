@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 from timeit import default_timer as timer
-from typing import AsyncIterator, Callable, Optional
+from typing import AsyncIterator, Callable, Optional, cast
 
 from spice.client_manager import (
     _get_client,
@@ -10,6 +12,7 @@ from spice.client_manager import (
 )
 from spice.errors import SpiceError
 from spice.utils import count_messages_tokens, count_string_tokens
+from spice.wrapped_clients import WrappedClient
 
 
 @dataclass
@@ -23,7 +26,7 @@ class SpiceCallArgs:
 
 
 class SpiceResponse:
-    def __init__(self, call_args, logging_callback=None):
+    def __init__(self, call_args: SpiceCallArgs, logging_callback: Optional[Callable[[SpiceResponse], None]]):
         self.call_args = call_args
         self._logging_callback = logging_callback
 
@@ -35,7 +38,7 @@ class SpiceResponse:
         self.input_tokens = None
         self.output_tokens = None
 
-    def finalize(self, text, input_tokens, output_tokens):
+    def finalize(self, text: str, input_tokens: Optional[int], output_tokens: Optional[int]):
         self._end_time = timer()
         self._text = text
         # TODO: this message counting methods are just for OpenAI,
@@ -55,37 +58,37 @@ class SpiceResponse:
             self._logging_callback(self)
 
     @property
-    def stream(self):
+    def stream(self) -> Callable[[], AsyncIterator[str]]:
         if self._stream is None:
             raise SpiceError("Stream not set! Did you use stream=True?")
         return self._stream
 
     @property
-    def text(self):
+    def text(self) -> str:
         if self._text is None:
             raise SpiceError("Text not set! Did you iterate over the stream?")
         return self._text
 
     @property
-    def time_to_first_token(self):
+    def time_to_first_token(self) -> float:
         if self._stream is None or self._first_token_time is None:
             raise SpiceError("Time to first token not tracked for non-streaming responses")
         return self._first_token_time - self._start_time
 
     @property
-    def total_time(self):
+    def total_time(self) -> float:
         if self._end_time is None:
             raise SpiceError("Total time not tracked! finalize() must be called first.")
         return self._end_time - self._start_time
 
     @property
-    def total_tokens(self):
+    def total_tokens(self) -> int:
         if self.input_tokens is None or self.output_tokens is None:
             raise SpiceError("Token counts not set! finalize() must be called first.")
         return self.input_tokens + self.output_tokens
 
     @property
-    def characters_per_second(self):
+    def characters_per_second(self) -> float:
         return len(self.text) / self.total_time
 
 
@@ -117,13 +120,13 @@ class Spice:
     async def call_llm(
         self,
         messages,
-        model=None,
-        stream=False,
-        temperature=None,
-        max_tokens=None,
-        response_format=None,
-        logging_callback=None,
-    ):
+        model: Optional[str] = None,
+        stream: bool = False,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        response_format: Optional[dict] = None,
+        logging_callback: Optional[Callable[[SpiceResponse], None]] = None,
+    ) -> SpiceResponse:
         if model is None:
             if self._default_model is None:
                 raise SpiceError("model argument is required when default model is not set at initialization")
@@ -134,6 +137,8 @@ class Spice:
                 model = self._model_aliases[model]["model"]
             else:
                 raise SpiceError(f"Unknown model alias: {model}")
+
+        model = cast(str, model)
 
         if self._default_client is not None:
             client = self._default_client
@@ -186,7 +191,7 @@ class Spice:
 
         return response
 
-    async def _get_streaming_response(self, client, stream, response) -> SpiceResponse:
+    async def _get_streaming_response(self, client: WrappedClient, stream, response: SpiceResponse) -> SpiceResponse:
         text_list = []
 
         async def wrapped_stream() -> AsyncIterator[str]:
