@@ -9,8 +9,8 @@ jobs:
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
           uv venv
-          uv pip install -r requirements.txt
-          uv pip install -r dev-requirements.txt
+          uv pip install .
+          uv pip install .[dev]
       - name: activate venv
         run: |
           . .venv/bin/activate

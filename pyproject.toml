@@ -13,3 +13,17 @@ packages=["spice"]
 [project]
 name = "spiceai"
 version = "0.1.0"
+dependencies = [
+    "python-dotenv",
+    "openai",
+    "anthropic",
+    "chromadb",
+    "pillow",
+    "tiktoken"
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff",
+    "pyright"
+]
