@@ -12,10 +12,10 @@ packages=["spice"]
 
 [project]
 name = "spiceai"
-version = "0.1.5"
-license = "Apache-2.0"
+version = "0.1.6"
+license = {text = "Apache License (2.0)"}
 description = "A Python library for building AI-powered applications."
-long-description = "README.md"
+readme = "README.md"
 dependencies = [
     "python-dotenv",
     "openai",
