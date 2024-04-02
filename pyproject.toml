@@ -13,6 +13,7 @@ packages=["spice"]
 [project]
 name = "spiceai"
 version = "0.1.2"
+license = "Apache-2.0"
 dependencies = [
     "python-dotenv",
     "openai",
