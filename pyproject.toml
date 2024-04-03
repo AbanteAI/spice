@@ -22,11 +22,20 @@ dependencies = [
     "anthropic",
     "chromadb",
     "pillow",
-    "tiktoken"
+    "tiktoken",
+    # Assuming standard dependencies from requirements.txt
+    "requests",
+    "numpy",
+    "pandas"
 ]
 
 [project.optional-dependencies]
 dev = [
     "ruff",
-    "pyright"
+    "pyright",
+    # Assuming standard development dependencies from dev-requirements.txt
+    "pytest",
+    "black",
+    "isort",
+    "mypy"
 ]
