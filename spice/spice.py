@@ -71,7 +71,6 @@ class StreamingSpiceResponse:
         return self
 
     async def __anext__(self):
-        # TODO: Do we need to catch errors here? I think it should only be necessary in actual api call
         with self._client.catch_and_convert_errors():
             try:
                 content = None
