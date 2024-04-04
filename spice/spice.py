@@ -5,13 +5,9 @@ from pathlib import Path
 from timeit import default_timer as timer
 from typing import AsyncIterator, Dict, List, Literal, Optional, cast
 
-from spice.client_manager import (
-    _get_client,
-    _get_clients_from_env,
-    _get_provider_from_model_name,
-    _validate_model_aliases,
-)
-from spice.errors import InvalidModelError, SpiceError
+from spice.errors import InvalidModelError
+from spice.models import EmbeddingModel, Model, TextModel, TranscriptionModel, UnknownModel, get_model_from_name
+from spice.providers import Provider, get_provider_from_name
 from spice.spice_message import SpiceMessage
 from spice.utils import count_messages_tokens, count_string_tokens
 from spice.wrapped_clients import WrappedClient
@@ -131,59 +127,63 @@ class StreamingSpiceResponse:
 class Spice:
     def __init__(
         self,
-        model: Optional[str] = None,
-        provider: Optional[str] = None,
-        model_aliases: Optional[Dict[str, Dict[str, str]]] = None,
+        default_text_model: Optional[TextModel | str] = None,
+        default_embeddings_model: Optional[EmbeddingModel | str] = None,
+        provider: Optional[Provider | str] = None,
+        model_aliases: Optional[Dict[str, Model | str]] = None,
     ):
-        self._default_model = model
-
-        if model is not None:
-            if model_aliases is not None:
-                raise SpiceError("model_aliases not supported when model is set")
-            self._model_aliases = None
-            if provider is None:
-                provider = _get_provider_from_model_name(model)
-            self._default_client = _get_client(provider)
+        if isinstance(default_text_model, str):
+            text_model = get_model_from_name(default_text_model)
         else:
-            if provider is not None:
-                self._default_client = _get_client(provider)
-            else:
-                self._default_client = None
-                self._clients = _get_clients_from_env()
+            text_model = default_text_model
+        if text_model and not isinstance(text_model, (TextModel, UnknownModel)):
+            raise InvalidModelError("Default text model must be a text model")
+        self._default_text_model = text_model
 
-            self._model_aliases = model_aliases
-            if model_aliases is not None:
-                _validate_model_aliases(
-                    self._model_aliases,
-                    self._clients if self._default_client is None else {provider: self._default_client},
-                )
+        if isinstance(default_embeddings_model, str):
+            embeddings_model = get_model_from_name(default_embeddings_model)
+        else:
+            embeddings_model = default_embeddings_model
+        if embeddings_model and not isinstance(embeddings_model, (EmbeddingModel, UnknownModel)):
+            raise InvalidModelError("Default embeddings model must be an embeddings model")
+        self._default_embeddings_model = embeddings_model
 
-    def _get_model(self, model: Optional[str]):
+        if isinstance(provider, str):
+            provider = get_provider_from_name(provider)
+        self._provider = provider
+
+        # TODO: Should we validate model aliases?
+        self._model_aliases = model_aliases
+
+    def _get_client(self, model: Model) -> WrappedClient:
+        if self._provider is not None:
+            return self._provider.get_client()
+        else:
+            if model.provider is None:
+                raise InvalidModelError("Provider is required when unknown models are used")
+            return model.provider.get_client()
+
+    def _get_text_model(self, model: Optional[Model | str]) -> TextModel | UnknownModel:
         if model is None:
-            if self._default_model is None:
-                raise SpiceError("Model argument is required when default model is not set at initialization")
-            model = self._default_model
+            if self._default_text_model is None:
+                raise InvalidModelError("Model is required when default text model is not set at initialization")
+            model = self._default_text_model
 
-        if self._model_aliases is not None:
-            if model in self._model_aliases:
-                model = self._model_aliases[model]["model"]
-            else:
-                raise InvalidModelError(f"Unknown model alias: {model}")
+        if self._model_aliases is not None and model in self._model_aliases:
+            model = self._model_aliases[model]
+
+        if isinstance(model, str):
+            model = get_model_from_name(model)
+
+        if not isinstance(model, (TextModel, UnknownModel)):
+            raise InvalidModelError(f"Model {model} is not a text model")
+
         return model
-
-    def _get_client(self, model: str):
-        if self._default_client is not None:
-            return self._default_client
-        else:
-            provider = _get_provider_from_model_name(model)
-            if provider not in self._clients:
-                raise InvalidModelError(f"Provider {provider} is not currently supported.")
-            return self._clients[provider]
 
     def _fix_call_args(
         self,
         messages: List[SpiceMessage],
-        model: str,
+        model: Model,
         stream: bool,
         temperature: Optional[float],
         max_tokens: Optional[int],
@@ -195,7 +195,7 @@ class Spice:
                 response_format = None
 
         return SpiceCallArgs(
-            model=model,
+            model=model.name,
             messages=messages,
             stream=stream,
             temperature=temperature,
@@ -206,14 +206,14 @@ class Spice:
     async def get_response(
         self,
         messages: List[SpiceMessage],
-        model: Optional[str] = None,
+        model: Optional[TextModel | str] = None,
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
         response_format: Optional[ResponseFormatType] = None,
     ) -> SpiceResponse:
-        model = self._get_model(model)
-        client = self._get_client(model)
-        call_args = self._fix_call_args(messages, model, False, temperature, max_tokens, response_format)
+        text_model = self._get_text_model(model)
+        client = self._get_client(text_model)
+        call_args = self._fix_call_args(messages, text_model, False, temperature, max_tokens, response_format)
 
         start_time = timer()
         with client.catch_and_convert_errors():
@@ -229,34 +229,67 @@ class Spice:
     async def stream_response(
         self,
         messages: List[SpiceMessage],
-        model: Optional[str] = None,
+        model: Optional[TextModel | str] = None,
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
         response_format: Optional[ResponseFormatType] = None,
     ) -> StreamingSpiceResponse:
-        model = self._get_model(model)
-        client = self._get_client(model)
-        call_args = self._fix_call_args(messages, model, True, temperature, max_tokens, response_format)
+        text_model = self._get_text_model(model)
+        client = self._get_client(text_model)
+        call_args = self._fix_call_args(messages, text_model, True, temperature, max_tokens, response_format)
 
         with client.catch_and_convert_errors():
             stream = await client.get_chat_completion_or_stream(call_args)
         stream = cast(AsyncIterator, stream)
         return StreamingSpiceResponse(call_args, client, stream)
 
-    async def get_embeddings(self, input_texts: List[str], model: Optional[str] = None) -> List[List[float]]:
-        model = self._get_model(model)
-        client = self._get_client(model)
+    def _get_embedding_model(self, model: Optional[Model | str]) -> EmbeddingModel | UnknownModel:
+        if model is None:
+            if self._default_embeddings_model is None:
+                raise InvalidModelError("Model is required when default embeddings model is not set at initialization")
+            model = self._default_embeddings_model
 
-        return await client.get_embeddings(input_texts, model)
+        if self._model_aliases is not None and model in self._model_aliases:
+            model = self._model_aliases[model]
 
-    def get_embeddings_sync(self, input_texts: List[str], model: Optional[str] = None) -> List[List[float]]:
-        model = self._get_model(model)
-        client = self._get_client(model)
+        if isinstance(model, str):
+            model = get_model_from_name(model)
 
-        return client.get_embeddings_sync(input_texts, model)
+        if not isinstance(model, (EmbeddingModel, UnknownModel)):
+            raise InvalidModelError(f"Model {model} is not a embedding model")
 
-    async def get_transcription(self, audio_path: Path, model: Optional[str] = None) -> str:
-        model = self._get_model(model)
-        client = self._get_client(model)
+        return model
 
-        return await client.get_transcription(audio_path, model)
+    async def get_embeddings(
+        self, input_texts: List[str], model: Optional[EmbeddingModel | str] = None
+    ) -> List[List[float]]:
+        embedding_model = self._get_embedding_model(model)
+        client = self._get_client(embedding_model)
+
+        return await client.get_embeddings(input_texts, embedding_model.name)
+
+    def get_embeddings_sync(
+        self, input_texts: List[str], model: Optional[EmbeddingModel | str] = None
+    ) -> List[List[float]]:
+        embedding_model = self._get_embedding_model(model)
+        client = self._get_client(embedding_model)
+
+        return client.get_embeddings_sync(input_texts, embedding_model.name)
+
+    def _get_transcription_model(self, model: Model | str) -> TranscriptionModel | UnknownModel:
+        if self._model_aliases is not None and model in self._model_aliases:
+            model = self._model_aliases[model]
+
+        if isinstance(model, str):
+            model = get_model_from_name(model)
+
+        if not isinstance(model, (TranscriptionModel, UnknownModel)):
+            raise InvalidModelError(f"Model {model} is not a transcription model")
+
+        return model
+
+    async def get_transcription(self, audio_path: Path, model: TranscriptionModel | str) -> str:
+        transciption_model = self._get_transcription_model(model)
+        client = self._get_client(transciption_model)
+
+        return await client.get_transcription(audio_path, transciption_model.name)

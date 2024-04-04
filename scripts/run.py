@@ -1,7 +1,7 @@
 import asyncio
 import os
 import sys
-from typing import List
+from typing import Dict, List
 
 # Modify sys.path to ensure the script can run even when it's not part of the installed library.
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -24,7 +24,7 @@ async def basic_example():
 
 async def streaming_example():
     # You can set a default model for the client instead of passing it with each call
-    client = Spice(model="claude-3-opus-20240229")
+    client = Spice(default_text_model="claude-3-opus-20240229")
 
     messages: List[SpiceMessage] = [
         {"role": "system", "content": "You are a helpful assistant."},
@@ -46,11 +46,14 @@ async def streaming_example():
 
 
 async def multiple_providers_example():
+    # Commonly used models and providers have premade constants
+    from spice.models import GPT_4_0125_PREVIEW
+
     # Alias models for easy configuration, even mixing providers
     model_aliases = {
-        "task1_model": {"model": "gpt-4-0125-preview"},
-        "task2_model": {"model": "claude-3-opus-20240229"},
-        "task3_model": {"model": "claude-3-haiku-20240307"},
+        "task1_model": GPT_4_0125_PREVIEW,
+        "task2_model": "claude-3-opus-20240229",
+        "task3_model": "claude-3-haiku-20240307",
     }
 
     client = Spice(model_aliases=model_aliases)
@@ -73,7 +76,7 @@ async def multiple_providers_example():
 
 async def azure_example():
     # Use azure deployment name for model
-    client = Spice(model="first-gpt35", provider="azure")
+    client = Spice(default_text_model="first-gpt35", provider="azure")
 
     messages: List[SpiceMessage] = [
         {"role": "system", "content": "You are a helpful assistant."},
