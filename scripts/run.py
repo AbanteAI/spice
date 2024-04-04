@@ -3,12 +3,11 @@ import os
 import sys
 from typing import List
 
-from spice.spice_message import SpiceMessage
-
 # Modify sys.path to ensure the script can run even when it's not part of the installed library.
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from spice import Spice
+from spice.spice_message import SpiceMessage
 
 
 async def basic_example():
