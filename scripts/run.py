@@ -18,7 +18,7 @@ async def basic_example():
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "list 5 random words"},
     ]
-    response = await client.completion(messages=messages, model="gpt-4-0125-preview")
+    response = await client.get_response(messages=messages, model="gpt-4-0125-preview")
 
     print(response.text)
 
@@ -31,7 +31,7 @@ async def streaming_example():
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "list 5 random words"},
     ]
-    stream = await client.stream_completion(messages=messages)
+    stream = await client.stream_response(messages=messages)
 
     async for text in stream:
         print(text, end="", flush=True)
@@ -61,9 +61,9 @@ async def multiple_providers_example():
         {"role": "user", "content": "list 5 random words"},
     ]
     responses = await asyncio.gather(
-        client.completion(messages=messages, model="task1_model"),
-        client.completion(messages=messages, model="task2_model"),
-        client.completion(messages=messages, model="task3_model"),
+        client.get_response(messages=messages, model="task1_model"),
+        client.get_response(messages=messages, model="task2_model"),
+        client.get_response(messages=messages, model="task3_model"),
     )
 
     for i, response in enumerate(responses, 1):
@@ -81,7 +81,7 @@ async def azure_example():
         {"role": "user", "content": "list 5 random words"},
     ]
 
-    response = await client.completion(messages=messages)
+    response = await client.get_response(messages=messages)
 
     print(response.text)
 

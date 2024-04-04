@@ -200,7 +200,7 @@ class Spice:
             response_format=response_format,
         )
 
-    async def completion(
+    async def get_response(
         self,
         messages: List[SpiceMessage],
         model: Optional[str] = None,
@@ -223,7 +223,7 @@ class Spice:
         )
         return response
 
-    async def stream_completion(
+    async def stream_response(
         self,
         messages: List[SpiceMessage],
         model: Optional[str] = None,
