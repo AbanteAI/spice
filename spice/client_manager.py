@@ -50,6 +50,8 @@ def _get_clients_from_env() -> Dict[str, WrappedClient]:
     return clients
 
 
+# TODO: Move this to a file and import it in __init__ to make it more visisble
+# TODO: Add more models
 _model_info = {
     "gpt-4-0125-preview": {"provider": "openai"},
     "gpt-4-vision-preview": {"provider": "openai"},

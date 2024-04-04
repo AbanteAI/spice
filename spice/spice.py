@@ -241,3 +241,15 @@ class Spice:
             stream = await client.get_chat_completion_or_stream(call_args)
         stream = cast(AsyncIterator, stream)
         return StreamingSpiceResponse(call_args, client, stream)
+
+    async def get_embeddings(self, input_texts: List[str], model: str) -> List[List[float]]:
+        model = self._get_model(model)
+        client = self._get_client(model)
+
+        return await client.get_embeddings(input_texts, model)
+
+    def get_embeddings_sync(self, input_texts: List[str], model: str) -> List[List[float]]:
+        model = self._get_model(model)
+        client = self._get_client(model)
+
+        return client.get_embeddings_sync(input_texts, model)
