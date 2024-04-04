@@ -3,7 +3,7 @@ from typing import Dict
 
 from dotenv import load_dotenv
 
-from spice.errors import SpiceError
+from spice.errors import InvalidModelError, SpiceError
 from spice.wrapped_clients import WrappedAnthropicClient, WrappedAzureClient, WrappedClient, WrappedOpenAIClient
 
 load_dotenv()
@@ -50,10 +50,17 @@ def _get_clients_from_env() -> Dict[str, WrappedClient]:
     return clients
 
 
+# TODO: Move this to a file and import it in __init__ to make it more visisble
+# TODO: Add more models
+# TODO: Distinguish between vision models, audio models, embeddings models, etc.
 _model_info = {
     "gpt-4-0125-preview": {"provider": "openai"},
     "gpt-4-vision-preview": {"provider": "openai"},
     "gpt-3.5-turbo-0125": {"provider": "openai"},
+    "whisper-1": {"provider": "openai"},
+    "text-embedding-3-large": {"provider": "openai"},
+    "text-embedding-3-small": {"provider": "openai"},
+    "text-embedding-ada-002": {"provider": "openai"},
     "claude-3-opus-20240229": {"provider": "anthropic"},
     "claude-3-haiku-20240307": {"provider": "anthropic"},
 }
@@ -61,7 +68,7 @@ _model_info = {
 
 def _get_provider_from_model_name(model):
     if model not in _model_info:
-        raise SpiceError(f"Unknown provider for model: {model}")
+        raise InvalidModelError(f"Unknown provider for model: {model}")
     return _model_info[model]["provider"]
 
 
@@ -73,4 +80,4 @@ def _validate_model_aliases(model_aliases, clients):
         else:
             provider = _get_provider_from_model_name(model_name)
         if provider not in clients:
-            raise SpiceError(f"Provider {provider} is not set up for model {model_name} ({alias})")
+            raise InvalidModelError(f"Provider {provider} is not set up for model {model_name} ({alias})")

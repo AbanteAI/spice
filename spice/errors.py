@@ -8,3 +8,7 @@ class AuthenticationError(SpiceError):
 
 class APIConnectionError(SpiceError):
     pass
+
+
+class InvalidModelError(SpiceError):
+    pass

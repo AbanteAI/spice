@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from timeit import default_timer as timer
 from typing import AsyncIterator, Dict, List, Literal, Optional, cast
 
@@ -10,7 +11,7 @@ from spice.client_manager import (
     _get_provider_from_model_name,
     _validate_model_aliases,
 )
-from spice.errors import SpiceError
+from spice.errors import InvalidModelError, SpiceError
 from spice.spice_message import SpiceMessage
 from spice.utils import count_messages_tokens, count_string_tokens
 from spice.wrapped_clients import WrappedClient
@@ -167,7 +168,7 @@ class Spice:
             if model in self._model_aliases:
                 model = self._model_aliases[model]["model"]
             else:
-                raise SpiceError(f"Unknown model alias: {model}")
+                raise InvalidModelError(f"Unknown model alias: {model}")
         return model
 
     def _get_client(self, model: str):
@@ -176,7 +177,7 @@ class Spice:
         else:
             provider = _get_provider_from_model_name(model)
             if provider not in self._clients:
-                raise SpiceError(f"Provider {provider} is not currently supported.")
+                raise InvalidModelError(f"Provider {provider} is not currently supported.")
             return self._clients[provider]
 
     def _fix_call_args(
@@ -241,3 +242,21 @@ class Spice:
             stream = await client.get_chat_completion_or_stream(call_args)
         stream = cast(AsyncIterator, stream)
         return StreamingSpiceResponse(call_args, client, stream)
+
+    async def get_embeddings(self, input_texts: List[str], model: Optional[str] = None) -> List[List[float]]:
+        model = self._get_model(model)
+        client = self._get_client(model)
+
+        return await client.get_embeddings(input_texts, model)
+
+    def get_embeddings_sync(self, input_texts: List[str], model: Optional[str] = None) -> List[List[float]]:
+        model = self._get_model(model)
+        client = self._get_client(model)
+
+        return client.get_embeddings_sync(input_texts, model)
+
+    async def get_transcription(self, audio_path: Path, model: Optional[str] = None) -> str:
+        model = self._get_model(model)
+        client = self._get_client(model)
+
+        return await client.get_transcription(audio_path, model)
