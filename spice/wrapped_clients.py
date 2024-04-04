@@ -14,7 +14,7 @@ from openai.types import Embedding
 from openai.types.chat import ChatCompletion, ChatCompletionChunk
 from typing_extensions import override
 
-from spice.errors import APIConnectionError, AuthenticationError, SpiceError
+from spice.errors import APIConnectionError, AuthenticationError, InvalidModelError, SpiceError
 
 if TYPE_CHECKING:
     from spice.spice import SpiceCallArgs
@@ -92,6 +92,7 @@ class WrappedOpenAIClient(WrappedClient):
     @override
     @contextmanager
     def catch_and_convert_errors(self):
+        # TODO: Do we catch all errors? I think we should catch APIStatusError
         try:
             yield
         except openai.APIConnectionError as e:
@@ -205,12 +206,12 @@ class WrappedAnthropicClient(WrappedClient):
 
     @override
     async def get_embeddings(self, input_texts: List[str], model: str) -> List[List[float]]:
-        raise NotImplementedError()  # TODO: Create invalidmodelerror and raise it instead
+        raise InvalidModelError()
 
     @override
     def get_embeddings_sync(self, input_texts: List[str], model: str) -> List[List[float]]:
-        raise NotImplementedError()
+        raise InvalidModelError()
 
     @override
     async def get_transcription(self, audio_path: Path, model: str) -> str:
-        raise NotImplementedError()
+        raise InvalidModelError()
