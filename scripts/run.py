@@ -1,6 +1,9 @@
 import asyncio
 import os
 import sys
+from typing import List
+
+from spice.spice_message import SpiceMessage
 
 # Modify sys.path to ensure the script can run even when it's not part of the installed library.
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -11,57 +14,40 @@ from spice import Spice
 async def basic_example():
     client = Spice()
 
-    messages = [
+    messages: List[SpiceMessage] = [
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "list 5 random words"},
     ]
-
-    response = await client.call_llm(messages=messages, model="gpt-4-0125-preview")
+    response = await client.completion(messages=messages, model="gpt-4-0125-preview")
 
     print(response.text)
 
 
 async def streaming_example():
-    # you can set a default model for the client instead of passing it with each call
+    # You can set a default model for the client instead of passing it with each call
     client = Spice(model="claude-3-opus-20240229")
 
-    messages = [
+    messages: List[SpiceMessage] = [
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "list 5 random words"},
     ]
+    stream = await client.stream_completion(messages=messages)
 
-    response = await client.call_llm(messages=messages, stream=True)
-
-    async for text in response.stream():
+    async for text in stream:
         print(text, end="", flush=True)
+    # Retrieve the complete response from the stream
+    response = await stream.complete_response()
 
-    # response always includes the final text, no need build it from the stream yourself
+    # Response always includes the final text, no need build it from the stream yourself
     print(response.text)
 
-    # response also includes helpful stats
+    # Response also includes helpful stats
     print(f"Took {response.total_time:.2f}s")
     print(f"Input/Output tokens: {response.input_tokens}/{response.output_tokens}")
 
 
-async def streaming_example_with_callback():
-    client = Spice(model="gpt-3.5-turbo-0125")
-
-    messages = [
-        {"role": "system", "content": "You are a helpful assistant."},
-        {"role": "user", "content": "list 5 random words"},
-    ]
-
-    # pass a logging function to get a callback after the stream completes
-    response = await client.call_llm(
-        messages=messages, stream=True, logging_callback=lambda response: print(response.text)
-    )
-
-    async for text in response.stream():
-        print(text, end="", flush=True)
-
-
 async def multiple_providers_example():
-    # alias models for easy configuration, even mixing providers
+    # Alias models for easy configuration, even mixing providers
     model_aliases = {
         "task1_model": {"model": "gpt-4-0125-preview"},
         "task2_model": {"model": "claude-3-opus-20240229"},
@@ -70,15 +56,14 @@ async def multiple_providers_example():
 
     client = Spice(model_aliases=model_aliases)
 
-    messages = [
+    messages: List[SpiceMessage] = [
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "list 5 random words"},
     ]
-
     responses = await asyncio.gather(
-        client.call_llm(messages=messages, model="task1_model"),
-        client.call_llm(messages=messages, model="task2_model"),
-        client.call_llm(messages=messages, model="task3_model"),
+        client.completion(messages=messages, model="task1_model"),
+        client.completion(messages=messages, model="task2_model"),
+        client.completion(messages=messages, model="task3_model"),
     )
 
     for i, response in enumerate(responses, 1):
@@ -88,15 +73,15 @@ async def multiple_providers_example():
 
 
 async def azure_example():
-    # use azure deployment name for model
+    # Use azure deployment name for model
     client = Spice(model="first-gpt35", provider="azure")
 
-    messages = [
+    messages: List[SpiceMessage] = [
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "list 5 random words"},
     ]
 
-    response = await client.call_llm(messages=messages)
+    response = await client.completion(messages=messages)
 
     print(response.text)
 
@@ -108,8 +93,6 @@ async def run_all_examples():
     await basic_example()
     print("\n\nRunning streaming example:")
     await streaming_example()
-    print("\n\nRunning streaming example with callback:")
-    await streaming_example_with_callback()
     print("\n\nRunning multiple providers example:")
     await multiple_providers_example()
 
