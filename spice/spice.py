@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from timeit import default_timer as timer
-from typing import AsyncIterator, Callable, Optional, cast
+from typing import AsyncIterator, Dict, List, Literal, Optional, cast
 
 from spice.client_manager import (
     _get_client,
@@ -11,101 +11,128 @@ from spice.client_manager import (
     _validate_model_aliases,
 )
 from spice.errors import SpiceError
+from spice.spice_message import SpiceMessage
 from spice.utils import count_messages_tokens, count_string_tokens
 from spice.wrapped_clients import WrappedClient
+
+ResponseFormatType = Dict[str, Literal["text", "json"]]
 
 
 @dataclass
 class SpiceCallArgs:
     model: str
-    messages: list[dict]
+    messages: List[SpiceMessage]
     stream: bool = False
     temperature: Optional[float] = None
     max_tokens: Optional[int] = None
-    response_format: Optional[dict] = None
+    response_format: Optional[ResponseFormatType] = None
 
 
+@dataclass
 class SpiceResponse:
-    def __init__(self, call_args: SpiceCallArgs, logging_callback: Optional[Callable[[SpiceResponse], None]]):
-        self.call_args = call_args
-        self._logging_callback = logging_callback
+    """
+    Contains a collection of information about a completed LLM call.
+    """
 
-        self._stream: Optional[Callable[[], AsyncIterator[str]]] = None
-        self._text = None
-        self._start_time = timer()
-        self._first_token_time: Optional[float] = None
-        self._end_time = None
-        self._input_tokens = None
-        self._output_tokens = None
-
-    def finalize(self, text: str, input_tokens: Optional[int], output_tokens: Optional[int]):
-        self._end_time = timer()
-        self._text = text
-        # TODO: this message counting methods are just for OpenAI,
-        # if other providers also don't send token counts when streaming
-        # then we need to add counting methods for them as well.
-        # TODO: input/output will also be none if streaming is interrupted
-        # so we need to identify the provider here to handle correctly
-        if input_tokens is None:
-            self._input_tokens = count_messages_tokens(self.call_args.messages, self.call_args.model)
-        else:
-            self._input_tokens = input_tokens
-        if output_tokens is None:
-            self._output_tokens = count_string_tokens(self.text, self.call_args.model, full_message=False)
-        else:
-            self._output_tokens = output_tokens
-        if self._logging_callback is not None:
-            self._logging_callback(self)
-
-    @property
-    def stream(self) -> Callable[[], AsyncIterator[str]]:
-        if self._stream is None:
-            raise SpiceError("Stream not set! Did you use stream=True?")
-        return self._stream
-
-    @property
-    def text(self) -> str:
-        if self._text is None:
-            raise SpiceError("Text not set! Did you iterate over the stream?")
-        return self._text
-
-    @property
-    def time_to_first_token(self) -> float:
-        if self._stream is None or self._first_token_time is None:
-            raise SpiceError("Time to first token not tracked for non-streaming responses")
-        return self._first_token_time - self._start_time
-
-    @property
-    def total_time(self) -> float:
-        if self._end_time is None:
-            raise SpiceError("Total time not tracked! finalize() must be called first.")
-        return self._end_time - self._start_time
-
-    @property
-    def input_tokens(self) -> int:
-        if self._input_tokens is None:
-            raise SpiceError("Input tokens not set! finalize() must be called first.")
-        return self._input_tokens
-
-    @property
-    def output_tokens(self) -> int:
-        if self._output_tokens is None:
-            raise SpiceError("Output tokens not set! finalize() must be called first.")
-        return self._output_tokens
+    call_args: SpiceCallArgs
+    text: str
+    total_time: float
+    input_tokens: int
+    output_tokens: int
+    completed: bool
+    # TODO: Add cost
 
     @property
     def total_tokens(self) -> int:
-        if self._input_tokens is None or self._output_tokens is None:
-            raise SpiceError("Token counts not set! finalize() must be called first.")
-        return self._input_tokens + self._output_tokens
+        return self.input_tokens + self.output_tokens
 
     @property
     def characters_per_second(self) -> float:
         return len(self.text) / self.total_time
 
 
+class StreamingSpiceResponse:
+    """
+    Returned from a streaming llm call. Can be iterated over asynchronously to retrieve the content.
+    """
+
+    def __init__(self, call_args: SpiceCallArgs, client: WrappedClient, stream: AsyncIterator):
+        self._call_args = call_args
+        self._text = []
+        self._start_time = timer()
+        self._end_time = None
+        self._input_tokens = None
+        self._output_tokens = None
+        self._finished = False
+        self._client = client
+        self._stream = stream
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        # TODO: Do we need to catch errors here? I think it should only be necessary in actual api call
+        with self._client.catch_and_convert_errors():
+            try:
+                content = None
+                while content is None:
+                    chunk = await anext(self._stream)
+                    content, input_tokens, output_tokens = self._client.process_chunk(chunk)
+                    if input_tokens is not None:
+                        self._input_tokens = input_tokens
+                    if output_tokens is not None:
+                        self._output_tokens = output_tokens
+                self._text.append(content)
+                return content
+            except StopAsyncIteration:
+                self._end_time = timer()
+                self._finished = True
+                raise
+
+    def current_response(self) -> SpiceResponse:
+        """
+        Returns a SpiceResponse containing the response as it's been received so far.
+        Will not wait for the LLM call to finish.
+        """
+        if self._end_time is None:
+            self._end_time = timer()
+
+        full_output = "".join(self._text)
+
+        # TODO: this message counting methods are just for OpenAI,
+        # if other providers also don't send token counts when streaming or are interrupted
+        # then we need to add counting methods for them as well.
+        # Easiest way to do this would be to add count tokens functions to wrapped client
+        if self._input_tokens is None:
+            self._input_tokens = count_messages_tokens(self._call_args.messages, self._call_args.model)
+        if self._output_tokens is None:
+            self._output_tokens = count_string_tokens(full_output, self._call_args.model, full_message=False)
+
+        return SpiceResponse(
+            self._call_args,
+            full_output,
+            self._end_time - self._start_time,
+            self._input_tokens,
+            self._output_tokens,
+            self._finished,
+        )
+
+    async def complete_response(self) -> SpiceResponse:
+        """
+        Waits until the entire LLM call finishes, collects it, and returns its SpiceResponse.
+        """
+        async for _ in self:
+            pass
+        return self.current_response()
+
+
 class Spice:
-    def __init__(self, model=None, provider=None, model_aliases=None):
+    def __init__(
+        self,
+        model: Optional[str] = None,
+        provider: Optional[str] = None,
+        model_aliases: Optional[Dict[str, Dict[str, str]]] = None,
+    ):
         self._default_model = model
 
         if model is not None:
@@ -129,19 +156,10 @@ class Spice:
                     self._clients if self._default_client is None else {provider: self._default_client},
                 )
 
-    async def call_llm(
-        self,
-        messages: list[dict[str, str]],
-        model: Optional[str] = None,
-        stream: bool = False,
-        temperature: Optional[float] = None,
-        max_tokens: Optional[int] = None,
-        response_format: Optional[dict[str, str]] = None,
-        logging_callback: Optional[Callable[[SpiceResponse], None]] = None,
-    ) -> SpiceResponse:
+    def _get_model(self, model: Optional[str]):
         if model is None:
             if self._default_model is None:
-                raise SpiceError("model argument is required when default model is not set at initialization")
+                raise SpiceError("Model argument is required when default model is not set at initialization")
             model = self._default_model
 
         if self._model_aliases is not None:
@@ -149,90 +167,76 @@ class Spice:
                 model = self._model_aliases[model]["model"]
             else:
                 raise SpiceError(f"Unknown model alias: {model}")
+        return model
 
-        model = cast(str, model)
-
+    def _get_client(self, model: str):
         if self._default_client is not None:
-            client = self._default_client
+            return self._default_client
         else:
             provider = _get_provider_from_model_name(model)
             if provider not in self._clients:
-                raise SpiceError(f"Provider {provider} is not set up for model {model}")
-            client = self._clients[provider]
+                raise SpiceError(f"Provider {provider} is not currently supported.")
+            return self._clients[provider]
 
-        # not all providers support response format
+    def _fix_call_args(
+        self,
+        messages: List[SpiceMessage],
+        model: str,
+        stream: bool,
+        temperature: Optional[float],
+        max_tokens: Optional[int],
+        response_format: Optional[ResponseFormatType],
+    ):
+        # Not all providers support response format
         if response_format is not None:
             if response_format == {"type": "text"}:
                 response_format = None
 
-        # gpt-4-vision has low default max_tokens
-        if max_tokens is None and model == "gpt-4-vision-preview":
-            max_tokens = 4096
-
-        response = SpiceResponse(
-            call_args=SpiceCallArgs(
-                model=model,
-                messages=messages,
-                stream=stream,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                response_format=response_format,
-            ),
-            logging_callback=logging_callback,
+        return SpiceCallArgs(
+            model=model,
+            messages=messages,
+            stream=stream,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            response_format=response_format,
         )
 
+    async def completion(
+        self,
+        messages: List[SpiceMessage],
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        response_format: Optional[ResponseFormatType] = None,
+    ) -> SpiceResponse:
+        model = self._get_model(model)
+        client = self._get_client(model)
+        call_args = self._fix_call_args(messages, model, False, temperature, max_tokens, response_format)
+
+        start_time = timer()
         with client.catch_and_convert_errors():
-            chat_completion_or_stream = await client.get_chat_completion_or_stream(
-                model=model,
-                messages=messages,
-                stream=stream,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                response_format=response_format,
-            )
+            chat_completion = await client.get_chat_completion_or_stream(call_args)
+        end_time = timer()
+        input_tokens, output_tokens = client.get_input_and_output_tokens(chat_completion)
 
-        if stream:
-            await self._get_streaming_response(client, chat_completion_or_stream, response)
-        else:
-            input_tokens, output_tokens = client.get_input_and_output_tokens(chat_completion_or_stream)
-            response.finalize(
-                text=client.extract_text(chat_completion_or_stream),
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-            )
-
+        response = SpiceResponse(
+            call_args, client.extract_text(chat_completion), end_time - start_time, input_tokens, output_tokens, True
+        )
         return response
 
-    async def _get_streaming_response(self, client: WrappedClient, stream, response: SpiceResponse) -> SpiceResponse:
-        text_list = []
+    async def stream_completion(
+        self,
+        messages: List[SpiceMessage],
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        response_format: Optional[ResponseFormatType] = None,
+    ) -> StreamingSpiceResponse:
+        model = self._get_model(model)
+        client = self._get_client(model)
+        call_args = self._fix_call_args(messages, model, True, temperature, max_tokens, response_format)
 
-        async def wrapped_stream() -> AsyncIterator[str]:
-            input_tokens = None
-            output_tokens = None
-
-            try:
-                with client.catch_and_convert_errors():
-                    async for chunk in stream:
-                        content, _input_tokens, _output_tokens = client.process_chunk(chunk)
-                        if _input_tokens is not None:
-                            input_tokens = _input_tokens
-                        if _output_tokens is not None:
-                            output_tokens = _output_tokens
-                        if content is not None:
-                            if response._first_token_time is None:
-                                response._first_token_time = timer()
-                            text_list.append(content)
-                            yield content
-            finally:
-                # TODO: find better way to do this
-                # this finally block is executed even if the stream is interrupted,
-                # but it can be delayed - it runs when the reference to the genereator
-                # is garbage collected and there is an await in user code
-                response.finalize(
-                    text="".join(text_list),
-                    input_tokens=input_tokens,
-                    output_tokens=output_tokens,
-                )
-
-        response._stream = wrapped_stream
-        return response
+        with client.catch_and_convert_errors():
+            stream = await client.get_chat_completion_or_stream(call_args)
+        stream = cast(AsyncIterator, stream)
+        return StreamingSpiceResponse(call_args, client, stream)

@@ -40,8 +40,7 @@ async def streaming_example():
 
     # response also includes helpful stats
     print(f"Took {response.total_time:.2f}s")
-    print(f"Time to first token: {response.time_to_first_token:.2f}s")
-    print(f"Input/Output tokens: {response._input_tokens}/{response._output_tokens}")
+    print(f"Input/Output tokens: {response.input_tokens}/{response.output_tokens}")
 
 
 async def streaming_example_with_callback():

@@ -4,6 +4,8 @@ import io
 import tiktoken
 from PIL import Image
 
+from spice.spice_message import SpiceMessage
+
 
 def fuzzy_model_lookup(model_hint):
     model_hint = str(model_hint).lower()
@@ -42,7 +44,7 @@ def count_string_tokens(message: str, model: str, full_message: bool) -> int:
     return len(encoding.encode(message, disallowed_special=())) + (4 if full_message else 0)
 
 
-def count_messages_tokens(messages: list[dict], model: str):
+def count_messages_tokens(messages: list[SpiceMessage], model: str):
     """
     Returns the number of tokens used by a prompt if it was sent to OpenAI for a chat completion.
     Adapted from https://platform.openai.com/docs/guides/text-generation/managing-tokens

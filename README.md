@@ -35,7 +35,6 @@ print(response.text)
 
 # response also includes helpful stats
 print(f"Took {response.total_time:.2f}s")
-print(f"Time to first token: {response.time_to_first_token:.2f}s")
 print(f"Input/Output tokens: {response.input_tokens}/{response.output_tokens}")
 ```
 
