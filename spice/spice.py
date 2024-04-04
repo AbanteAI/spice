@@ -93,7 +93,7 @@ class StreamingSpiceResponse:
         Returns a SpiceResponse containing the response as it's been received so far.
         Will not wait for the LLM call to finish.
         """
-        if self._end_time is None:
+        if not self._finished or self._end_time is None:
             self._end_time = timer()
 
         full_output = "".join(self._text)
@@ -102,17 +102,19 @@ class StreamingSpiceResponse:
         # if other providers also don't send token counts when streaming or are interrupted
         # then we need to add counting methods for them as well.
         # Easiest way to do this would be to add count tokens functions to wrapped client
-        if self._input_tokens is None:
-            self._input_tokens = count_messages_tokens(self._call_args.messages, self._call_args.model)
-        if self._output_tokens is None:
-            self._output_tokens = count_string_tokens(full_output, self._call_args.model, full_message=False)
+        input_tokens = self._input_tokens
+        if input_tokens is None:
+            input_tokens = count_messages_tokens(self._call_args.messages, self._call_args.model)
+        output_tokens = self._output_tokens
+        if output_tokens is None:
+            output_tokens = count_string_tokens(full_output, self._call_args.model, full_message=False)
 
         return SpiceResponse(
             self._call_args,
             full_output,
             self._end_time - self._start_time,
-            self._input_tokens,
-            self._output_tokens,
+            input_tokens,
+            output_tokens,
             self._finished,
         )
 
