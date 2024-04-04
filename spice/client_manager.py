@@ -1,9 +1,10 @@
 import os
+from typing import Dict
 
 from dotenv import load_dotenv
 
 from spice.errors import SpiceError
-from spice.wrapped_clients import WrappedAnthropicClient, WrappedAzureClient, WrappedOpenAIClient
+from spice.wrapped_clients import WrappedAnthropicClient, WrappedAzureClient, WrappedClient, WrappedOpenAIClient
 
 load_dotenv()
 
@@ -36,7 +37,7 @@ def _get_client(provider):
         raise SpiceError(f"Unknown provider: {provider}")
 
 
-def _get_clients_from_env():
+def _get_clients_from_env() -> Dict[str, WrappedClient]:
     known_providers = {"openai", "anthropic", "azure"}
     clients = {}
     for provider in known_providers:
