@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from timeit import default_timer as timer
 from typing import AsyncIterator, Dict, List, Literal, Optional, cast
 
@@ -253,3 +254,9 @@ class Spice:
         client = self._get_client(model)
 
         return client.get_embeddings_sync(input_texts, model)
+
+    async def get_transcription(self, audio_path: Path, model: str) -> str:
+        model = self._get_model(model)
+        client = self._get_client(model)
+
+        return await client.get_transcription(audio_path, model)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, AsyncIterator, ContextManager, Dict, List, Optional
 
 import anthropic
@@ -42,6 +43,9 @@ class WrappedClient(ABC):
 
     @abstractmethod
     def get_embeddings_sync(self, input_texts: List[str], model: str) -> List[List[float]]: ...
+
+    @abstractmethod
+    async def get_transcription(self, audio_path: Path, model: str) -> str: ...
 
 
 class WrappedOpenAIClient(WrappedClient):
@@ -106,6 +110,15 @@ class WrappedOpenAIClient(WrappedClient):
         embeddings = self._sync_client.embeddings.create(input=input_texts, model=model).data
         sorted_embeddings = sorted(embeddings, key=lambda e: e.index)
         return [result.embedding for result in sorted_embeddings]
+
+    @override
+    async def get_transcription(self, audio_path: Path, model: str) -> str:
+        audio_file = open(audio_path, "rb")
+        transcript = await self._client.audio.transcriptions.create(
+            model=model,
+            file=audio_file,
+        )
+        return transcript.text
 
 
 class WrappedAzureClient(WrappedOpenAIClient):
@@ -196,4 +209,8 @@ class WrappedAnthropicClient(WrappedClient):
 
     @override
     def get_embeddings_sync(self, input_texts: List[str], model: str) -> List[List[float]]:
+        raise NotImplementedError()
+
+    @override
+    async def get_transcription(self, audio_path: Path, model: str) -> str:
         raise NotImplementedError()
