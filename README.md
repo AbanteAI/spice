@@ -22,7 +22,7 @@ print(response.text)
 
 ```python
 # You can set a default model for the client instead of passing it with each call
-client = Spice(model="claude-3-opus-20240229")
+client = Spice(default_text_model="claude-3-opus-20240229")
 
 messages: List[SpiceMessage] = [
     {"role": "system", "content": "You are a helpful assistant."},
@@ -46,11 +46,14 @@ print(f"Input/Output tokens: {response.input_tokens}/{response.output_tokens}")
 ### Mixing Providers
 
 ```python
+# Commonly used models and providers have premade constants
+from spice.models import GPT_4_0125_PREVIEW
+
 # Alias models for easy configuration, even mixing providers
 model_aliases = {
-    "task1_model": {"model": "gpt-4-0125-preview"},
-    "task2_model": {"model": "claude-3-opus-20240229"},
-    "task3_model": {"model": "claude-3-haiku-20240307"},
+    "task1_model": GPT_4_0125_PREVIEW,
+    "task2_model": "claude-3-opus-20240229",
+    "task3_model": "claude-3-haiku-20240307",
 }
 
 client = Spice(model_aliases=model_aliases)
