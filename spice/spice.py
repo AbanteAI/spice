@@ -32,19 +32,36 @@ class SpiceResponse:
     """
 
     call_args: SpiceCallArgs
+    """The call arguments given to the model that created this response."""
+
     text: str
+    """The total text sent by the model."""
+
     total_time: float
+    """
+    How long it took for the response to be completed.
+    May be inaccurate for streamed responses if not iterated over and completed immediately.
+    """
+
     input_tokens: int
+    """The number of input tokens given in this response."""
+
     output_tokens: int
+    """The number of output tokens given by the model in this response."""
+
     completed: bool
+    """Whether or not this response was fully completed. This will only ever be false for streaming responses."""
+
     # TODO: Add cost
 
     @property
     def total_tokens(self) -> int:
+        """The total tokens, input and output, in this response."""
         return self.input_tokens + self.output_tokens
 
     @property
     def characters_per_second(self) -> float:
+        """The characters per second that the model output. May be inaccurate for streamed responses if not iterated over and completed immediately."""
         return len(self.text) / self.total_time
 
 
@@ -125,6 +142,11 @@ class StreamingSpiceResponse:
 
 
 class Spice:
+    """
+    The Spice client. The majority of the time, only one Spice client should be initialized and used.
+    Automatically handles multiple providers and their respective errors.
+    """
+
     def __init__(
         self,
         default_text_model: Optional[TextModel | str] = None,
@@ -132,6 +154,23 @@ class Spice:
         provider: Optional[Provider | str] = None,
         model_aliases: Optional[Dict[str, Model | str]] = None,
     ):
+        """
+        Creates a new Spice client.
+
+        Args:
+            default_text_model: The default model that will be used for chat completions if no other model is given.
+            Will raise an InvalidModelError if the model is not a text model.
+
+            default_embeddings_model: The default model that will be used for embeddings if no other model is given.
+            Will raise an InvalidModelError if the model is not an embeddings model.
+
+            provider: The provider to use. If not set, Spice will select the provider if the model is known.
+            To use unknown models, like custom Azure deployments, the provider must be set.
+            Will raise an InvalidProviderError if an unknown provider is given.
+
+            model_aliases: A custom model name map.
+        """
+
         if isinstance(default_text_model, str):
             text_model = get_model_from_name(default_text_model)
         else:
@@ -211,6 +250,24 @@ class Spice:
         max_tokens: Optional[int] = None,
         response_format: Optional[ResponseFormatType] = None,
     ) -> SpiceResponse:
+        """
+        Asynchronously retrieves a chat completion response.
+
+        Args:
+            messages: The list of messages given as context for the completion.
+
+            model: The model to use. Must be a text based model. If no model is given, will use the default text model
+            the client was initialized with. If the model is unknown to Spice, the client must have been initialized with a provider.
+            Will raise an InvalidModelError if the model is not a text model, or if the model is unknown and no provider was given.
+
+            temperature: The temperature to give the model.
+
+            max_tokens: The maximum tokens the model can output.
+
+            response_format: For valid models, will set the response format to 'text' or 'json'.
+            If the provider/model does not support response_format, this argument will be ignored.
+        """
+
         text_model = self._get_text_model(model)
         client = self._get_client(text_model)
         call_args = self._fix_call_args(messages, text_model, False, temperature, max_tokens, response_format)
@@ -234,6 +291,24 @@ class Spice:
         max_tokens: Optional[int] = None,
         response_format: Optional[ResponseFormatType] = None,
     ) -> StreamingSpiceResponse:
+        """
+        Asynchronously retrieves a chat completion stream that can be iterated over asynchronously.
+
+        Args:
+            messages: The list of messages given as context for the completion.
+
+            model: The model to use. Must be a text based model. If no model is given, will use the default text model
+            the client was initialized with. If the model is unknown to Spice, the client must have been initialized with a provider.
+            Will raise an InvalidModelError if the model is not a text model, or if the model is unknown and no provider was given.
+
+            temperature: The temperature to give the model.
+
+            max_tokens: The maximum tokens the model can output.
+
+            response_format: For valid models, will set the response format to 'text' or 'json'.
+            If the provider/model does not support response_format, this argument will be ignored.
+        """
+
         text_model = self._get_text_model(model)
         client = self._get_client(text_model)
         call_args = self._fix_call_args(messages, text_model, True, temperature, max_tokens, response_format)
@@ -263,6 +338,17 @@ class Spice:
     async def get_embeddings(
         self, input_texts: List[str], model: Optional[EmbeddingModel | str] = None
     ) -> List[List[float]]:
+        """
+        Asynchronously retrieves embeddings for a list of text.
+
+        Args:
+            input_texts: The texts to generate embeddings for.
+
+            model: The embedding model to use. If no model is given, will use the default embedding model
+            the client was initialized with. If the model is unknown to Spice, the client must have been initialized with a provider.
+            Will raise an InvalidModelError if the model is not a embedding model, or if the model is unknown and no provider was given.
+        """
+
         embedding_model = self._get_embedding_model(model)
         client = self._get_client(embedding_model)
 
@@ -271,6 +357,17 @@ class Spice:
     def get_embeddings_sync(
         self, input_texts: List[str], model: Optional[EmbeddingModel | str] = None
     ) -> List[List[float]]:
+        """
+        Synchronously retrieves embeddings for a list of text.
+
+        Args:
+            input_texts: The texts to generate embeddings for.
+
+            model: The embedding model to use. If no model is given, will use the default embedding model
+            the client was initialized with. If the model is unknown to Spice, the client must have been initialized with a provider.
+            Will raise an InvalidModelError if the model is not a embedding model, or if the model is unknown and no provider was given.
+        """
+
         embedding_model = self._get_embedding_model(model)
         client = self._get_client(embedding_model)
 
@@ -289,6 +386,16 @@ class Spice:
         return model
 
     async def get_transcription(self, audio_path: Path, model: TranscriptionModel | str) -> str:
+        """
+        Asynchronously retrieves embeddings for a list of text.
+
+        Args:
+            audio_path: The path to the audio file to transcribe.
+
+            model: The model to use. Must be a transciption model. If the model is unknown to Spice, the client must have been initialized with a provider.
+            Will raise an InvalidModelError if the model is not a transciption model, or if the model is unknown and no provider was given.
+        """
+
         transciption_model = self._get_transcription_model(model)
         client = self._get_client(transciption_model)
 

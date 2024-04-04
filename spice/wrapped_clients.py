@@ -158,8 +158,7 @@ class WrappedAnthropicClient(WrappedClient):
             {"temperature": call_args.temperature} if call_args.temperature is not None else {}
         )
 
-        # TODO:
-        # convert messages to anthropic format (images and system messages are handled differently than OpenAI, whose format we use)
+        # TODO: convert messages to anthropic format (images and system messages are handled differently than OpenAI, whose format we use)
         converted_messages: List[MessageParam] = []
         for message in messages:
             pass

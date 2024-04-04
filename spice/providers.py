@@ -7,8 +7,6 @@ from dotenv import load_dotenv
 from spice.errors import InvalidProviderError, NoAPIKeyError
 from spice.wrapped_clients import WrappedAnthropicClient, WrappedAzureClient, WrappedClient, WrappedOpenAIClient
 
-# TODO: Is there a reason to have providers? We could just have a client that lazily checks for keys
-
 
 @dataclass
 class Provider:
