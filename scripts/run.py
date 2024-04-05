@@ -75,16 +75,27 @@ async def multiple_providers_example():
 
 
 async def azure_example():
-    # Use azure deployment name for model
-    client = Spice(default_text_model="first-gpt35", provider="azure")
+    client = Spice()
 
     messages: List[SpiceMessage] = [
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "list 5 random words"},
     ]
 
-    response = await client.get_response(messages=messages)
+    # To use Azure, specify the provider and the deployment model name
+    response = await client.get_response(messages=messages, model="first-gpt35", provider="azure")
+    print(response.text)
 
+    # Alternatively, to make a model and it's provider known to Spice, create a custom Model object
+    from spice.models import TextModel
+    from spice.providers import AZURE
+
+    AZURE_GPT = TextModel("first-gpt35", AZURE, context_length=16385)
+    response = await client.get_response(messages=messages, model=AZURE_GPT)
+    print(response.text)
+
+    # Creating the model automatically registers it in Spice's model list, so listing the provider is no longer needed
+    response = await client.get_response(messages=messages, model="first-gpt35")
     print(response.text)
 
 

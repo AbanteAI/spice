@@ -1,8 +1,13 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import List
 
 from spice.errors import InvalidModelError
 from spice.providers import ANTHROPIC, OPEN_AI, Provider
+
+# Used to fetch a model by name
+models: List[Model] = []
 
 
 # TODO: Add costs to models
@@ -10,6 +15,9 @@ from spice.providers import ANTHROPIC, OPEN_AI, Provider
 class Model:
     name: str
     provider: Provider | None
+
+    def __post_init__(self):
+        models.append(self)
 
 
 @dataclass
@@ -51,22 +59,10 @@ TEXT_EMBEDDING_3_LARGE = EmbeddingModel("text-embedding-3-large", OPEN_AI)
 TEXT_EMBEDDING_3_SMALL = EmbeddingModel("text-embedding-3-small", OPEN_AI)
 TEXT_EMBEDDING_ADA_002 = EmbeddingModel("text-embedding-ada-002", OPEN_AI)
 
-# Used to fetch a model by name
-models: List[Model] = [
-    GPT_4_0125_PREVIEW,
-    GPT_4_VISION_PREVIEW,
-    GPT_35_TURBO_0125,
-    CLAUDE_3_OPUS_20240229,
-    CLAUDE_3_HAIKU_20240307,
-    WHISPER_1,
-    TEXT_EMBEDDING_3_LARGE,
-    TEXT_EMBEDDING_3_SMALL,
-    TEXT_EMBEDDING_ADA_002,
-]
-
 
 def get_model_from_name(model_name: str) -> Model:
-    for model in models:
+    # Search backwards; this way user defined models take priority
+    for model in reversed(models):
         if model.name == model_name:
             return model
 

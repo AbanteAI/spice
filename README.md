@@ -73,3 +73,30 @@ for i, response in enumerate(responses, 1):
     print(response.text)
     print(f"Characters per second: {response.characters_per_second:.2f}")
 ```
+
+### Using unknown models
+
+```python
+client = Spice()
+
+messages: List[SpiceMessage] = [
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "list 5 random words"},
+]
+
+# To use Azure, specify the provider and the deployment model name
+response = await client.get_response(messages=messages, model="first-gpt35", provider="azure")
+print(response.text)
+
+# Alternatively, to make a model and it's provider known to Spice, create a custom Model object
+from spice.models import TextModel
+from spice.providers import AZURE
+
+AZURE_GPT = TextModel("first-gpt35", AZURE, context_length=16385)
+response = await client.get_response(messages=messages, model=AZURE_GPT)
+print(response.text)
+
+# Creating the model automatically registers it in Spice's model list, so listing the provider is no longer needed
+response = await client.get_response(messages=messages, model="first-gpt35")
+print(response.text)
+```

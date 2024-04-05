@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 from dataclasses import dataclass
 from typing import Callable, List
@@ -7,11 +9,17 @@ from dotenv import load_dotenv
 from spice.errors import InvalidProviderError, NoAPIKeyError
 from spice.wrapped_clients import WrappedAnthropicClient, WrappedAzureClient, WrappedClient, WrappedOpenAIClient
 
+# Used to fetch a provider by name
+providers: List[Provider] = []
+
 
 @dataclass
 class Provider:
     name: str
     get_client: Callable[[], WrappedClient]
+
+    def __post_init__(self):
+        providers.append(self)
 
 
 def get_openai_client(cache=[]):
@@ -66,9 +74,6 @@ load_dotenv()
 OPEN_AI = Provider("open_ai", get_openai_client)
 AZURE = Provider("azure", get_azure_client)
 ANTHROPIC = Provider("anthropic", get_anthropic_client)
-
-# Used to fetch a provider by name
-providers: List[Provider] = [OPEN_AI, AZURE, ANTHROPIC]
 
 
 def get_provider_from_name(provider_name: str) -> Provider:

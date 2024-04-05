@@ -151,7 +151,6 @@ class Spice:
         self,
         default_text_model: Optional[TextModel | str] = None,
         default_embeddings_model: Optional[EmbeddingModel | str] = None,
-        provider: Optional[Provider | str] = None,
         model_aliases: Optional[Dict[str, Model | str]] = None,
     ):
         """
@@ -163,10 +162,6 @@ class Spice:
 
             default_embeddings_model: The default model that will be used for embeddings if no other model is given.
             Will raise an InvalidModelError if the model is not an embeddings model.
-
-            provider: The provider to use. If not set, Spice will select the provider if the model is known.
-            To use unknown models, like custom Azure deployments, the provider must be set.
-            Will raise an InvalidProviderError if an unknown provider is given.
 
             model_aliases: A custom model name map.
         """
@@ -187,16 +182,14 @@ class Spice:
             raise InvalidModelError("Default embeddings model must be an embeddings model")
         self._default_embeddings_model = embeddings_model
 
-        if isinstance(provider, str):
-            provider = get_provider_from_name(provider)
-        self._provider = provider
-
         # TODO: Should we validate model aliases?
         self._model_aliases = model_aliases
 
-    def _get_client(self, model: Model) -> WrappedClient:
-        if self._provider is not None:
-            return self._provider.get_client()
+    def _get_client(self, model: Model, provider: Optional[Provider | str]) -> WrappedClient:
+        if provider is not None:
+            if isinstance(provider, str):
+                provider = get_provider_from_name(provider)
+            return provider.get_client()
         else:
             if model.provider is None:
                 raise InvalidModelError("Provider is required when unknown models are used")
@@ -246,6 +239,7 @@ class Spice:
         self,
         messages: List[SpiceMessage],
         model: Optional[TextModel | str] = None,
+        provider: Optional[Provider | str] = None,
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
         response_format: Optional[ResponseFormatType] = None,
@@ -257,8 +251,10 @@ class Spice:
             messages: The list of messages given as context for the completion.
 
             model: The model to use. Must be a text based model. If no model is given, will use the default text model
-            the client was initialized with. If the model is unknown to Spice, the client must have been initialized with a provider.
+            the client was initialized with. If the model is unknown to Spice, a provider must be given.
             Will raise an InvalidModelError if the model is not a text model, or if the model is unknown and no provider was given.
+
+            provider: The provider to use. If specified, will override the model's default provider if known. Must be specified if an unknown model is used.
 
             temperature: The temperature to give the model.
 
@@ -269,7 +265,7 @@ class Spice:
         """
 
         text_model = self._get_text_model(model)
-        client = self._get_client(text_model)
+        client = self._get_client(text_model, provider)
         call_args = self._fix_call_args(messages, text_model, False, temperature, max_tokens, response_format)
 
         start_time = timer()
@@ -287,6 +283,7 @@ class Spice:
         self,
         messages: List[SpiceMessage],
         model: Optional[TextModel | str] = None,
+        provider: Optional[Provider | str] = None,
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
         response_format: Optional[ResponseFormatType] = None,
@@ -298,8 +295,10 @@ class Spice:
             messages: The list of messages given as context for the completion.
 
             model: The model to use. Must be a text based model. If no model is given, will use the default text model
-            the client was initialized with. If the model is unknown to Spice, the client must have been initialized with a provider.
+            the client was initialized with. If the model is unknown to Spice, a provider must be given.
             Will raise an InvalidModelError if the model is not a text model, or if the model is unknown and no provider was given.
+
+            provider: The provider to use. If specified, will override the model's default provider if known. Must be specified if an unknown model is used.
 
             temperature: The temperature to give the model.
 
@@ -310,7 +309,7 @@ class Spice:
         """
 
         text_model = self._get_text_model(model)
-        client = self._get_client(text_model)
+        client = self._get_client(text_model, provider)
         call_args = self._fix_call_args(messages, text_model, True, temperature, max_tokens, response_format)
 
         with client.catch_and_convert_errors():
@@ -336,7 +335,10 @@ class Spice:
         return model
 
     async def get_embeddings(
-        self, input_texts: List[str], model: Optional[EmbeddingModel | str] = None
+        self,
+        input_texts: List[str],
+        model: Optional[EmbeddingModel | str] = None,
+        provider: Optional[Provider | str] = None,
     ) -> List[List[float]]:
         """
         Asynchronously retrieves embeddings for a list of text.
@@ -345,17 +347,22 @@ class Spice:
             input_texts: The texts to generate embeddings for.
 
             model: The embedding model to use. If no model is given, will use the default embedding model
-            the client was initialized with. If the model is unknown to Spice, the client must have been initialized with a provider.
+            the client was initialized with. If the model is unknown to Spice, a provider must be given.
             Will raise an InvalidModelError if the model is not a embedding model, or if the model is unknown and no provider was given.
+
+            provider: The provider to use. If specified, will override the model's default provider if known. Must be specified if an unknown model is used.
         """
 
         embedding_model = self._get_embedding_model(model)
-        client = self._get_client(embedding_model)
+        client = self._get_client(embedding_model, provider)
 
         return await client.get_embeddings(input_texts, embedding_model.name)
 
     def get_embeddings_sync(
-        self, input_texts: List[str], model: Optional[EmbeddingModel | str] = None
+        self,
+        input_texts: List[str],
+        model: Optional[EmbeddingModel | str] = None,
+        provider: Optional[Provider | str] = None,
     ) -> List[List[float]]:
         """
         Synchronously retrieves embeddings for a list of text.
@@ -364,12 +371,14 @@ class Spice:
             input_texts: The texts to generate embeddings for.
 
             model: The embedding model to use. If no model is given, will use the default embedding model
-            the client was initialized with. If the model is unknown to Spice, the client must have been initialized with a provider.
+            the client was initialized with. If the model is unknown to Spice, a provider must be given.
             Will raise an InvalidModelError if the model is not a embedding model, or if the model is unknown and no provider was given.
+
+            provider: The provider to use. If specified, will override the model's default provider if known. Must be specified if an unknown model is used.
         """
 
         embedding_model = self._get_embedding_model(model)
-        client = self._get_client(embedding_model)
+        client = self._get_client(embedding_model, provider)
 
         return client.get_embeddings_sync(input_texts, embedding_model.name)
 
@@ -385,18 +394,25 @@ class Spice:
 
         return model
 
-    async def get_transcription(self, audio_path: Path, model: TranscriptionModel | str) -> str:
+    async def get_transcription(
+        self,
+        audio_path: Path,
+        model: TranscriptionModel | str,
+        provider: Optional[Provider | str] = None,
+    ) -> str:
         """
         Asynchronously retrieves embeddings for a list of text.
 
         Args:
             audio_path: The path to the audio file to transcribe.
 
-            model: The model to use. Must be a transciption model. If the model is unknown to Spice, the client must have been initialized with a provider.
+            model: The model to use. Must be a transciption model. If the model is unknown to Spice, a provider must be given.
             Will raise an InvalidModelError if the model is not a transciption model, or if the model is unknown and no provider was given.
+
+            provider: The provider to use. If specified, will override the model's default provider if known. Must be specified if an unknown model is used.
         """
 
         transciption_model = self._get_transcription_model(model)
-        client = self._get_client(transciption_model)
+        client = self._get_client(transciption_model, provider)
 
         return await client.get_transcription(audio_path, transciption_model.name)
