@@ -6,7 +6,7 @@ from typing import Callable, List
 
 from dotenv import load_dotenv
 
-from spice.errors import InvalidProviderError, NoAPIKeyError
+from spice.errors import InvalidProviderError, NoAPIKeyError, SpiceError
 from spice.wrapped_clients import WrappedAnthropicClient, WrappedAzureClient, WrappedClient, WrappedOpenAIClient
 
 # Used to fetch a provider by name
@@ -49,7 +49,7 @@ def get_azure_client(cache=[]):
     if key is None:
         raise NoAPIKeyError("AZURE_OPENAI_KEY not set")
     if endpoint is None:
-        raise NoAPIKeyError("AZURE_OPENAI_ENDPOINT not set")
+        raise SpiceError("AZURE_OPENAI_ENDPOINT not set")
 
     client = WrappedAzureClient(key, endpoint)
     cache.append(client)
