@@ -12,3 +12,11 @@ class APIConnectionError(SpiceError):
 
 class InvalidModelError(SpiceError):
     pass
+
+
+class InvalidProviderError(SpiceError):
+    pass
+
+
+class NoAPIKeyError(SpiceError):
+    pass
