@@ -152,6 +152,7 @@ class Spice:
         default_text_model: Optional[TextModel | str] = None,
         default_embeddings_model: Optional[EmbeddingModel | str] = None,
         model_aliases: Optional[Dict[str, Model | str]] = None,
+        load_providers: List[Provider | str] = [],
     ):
         """
         Creates a new Spice client.
@@ -164,6 +165,9 @@ class Spice:
             Will raise an InvalidModelError if the model is not an embeddings model.
 
             model_aliases: A custom model name map.
+
+            load_providers: If specified, will load the given providers in this function and raise a NoAPIKeyError if no valid api key for the provider is found.
+            Any providers not specified here will be lazily loaded on first use, and the NoAPIKeyError will be thrown when they are used.
         """
 
         if isinstance(default_text_model, str):
@@ -184,6 +188,11 @@ class Spice:
 
         # TODO: Should we validate model aliases?
         self._model_aliases = model_aliases
+
+        for provider in load_providers:
+            if isinstance(provider, str):
+                provider = get_provider_from_name(provider)
+            provider.get_client()
 
     def _get_client(self, model: Model, provider: Optional[Provider | str]) -> WrappedClient:
         if provider is not None:
