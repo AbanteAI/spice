@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from timeit import default_timer as timer
-from typing import AsyncIterator, Dict, List, Literal, Optional, cast
+from typing import AsyncIterator, Dict, List, Literal, Optional, Sequence, cast
 
 from spice.errors import InvalidModelError
 from spice.models import EmbeddingModel, Model, TextModel, TranscriptionModel, UnknownModel, get_model_from_name
@@ -12,7 +12,7 @@ from spice.spice_message import SpiceMessage
 from spice.utils import count_messages_tokens, count_string_tokens
 from spice.wrapped_clients import WrappedClient
 
-ResponseFormatType = Dict[str, Literal["text", "json"]]
+ResponseFormat = Dict[str, Literal["text", "json_object"]]
 
 
 @dataclass
@@ -22,7 +22,7 @@ class SpiceCallArgs:
     stream: bool = False
     temperature: Optional[float] = None
     max_tokens: Optional[int] = None
-    response_format: Optional[ResponseFormatType] = None
+    response_format: Optional[ResponseFormat] = None
 
 
 @dataclass
@@ -229,7 +229,7 @@ class Spice:
         stream: bool,
         temperature: Optional[float],
         max_tokens: Optional[int],
-        response_format: Optional[ResponseFormatType],
+        response_format: Optional[ResponseFormat],
     ):
         # Not all providers support response format
         if response_format is not None:
@@ -252,7 +252,7 @@ class Spice:
         provider: Optional[Provider | str] = None,
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
-        response_format: Optional[ResponseFormatType] = None,
+        response_format: Optional[ResponseFormat] = None,
     ) -> SpiceResponse:
         """
         Asynchronously retrieves a chat completion response.
@@ -296,7 +296,7 @@ class Spice:
         provider: Optional[Provider | str] = None,
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
-        response_format: Optional[ResponseFormatType] = None,
+        response_format: Optional[ResponseFormat] = None,
     ) -> StreamingSpiceResponse:
         """
         Asynchronously retrieves a chat completion stream that can be iterated over asynchronously.
@@ -349,7 +349,7 @@ class Spice:
         input_texts: List[str],
         model: Optional[EmbeddingModel | str] = None,
         provider: Optional[Provider | str] = None,
-    ) -> List[List[float]]:
+    ) -> Sequence[Sequence[float]]:
         """
         Asynchronously retrieves embeddings for a list of text.
 
@@ -373,7 +373,7 @@ class Spice:
         input_texts: List[str],
         model: Optional[EmbeddingModel | str] = None,
         provider: Optional[Provider | str] = None,
-    ) -> List[List[float]]:
+    ) -> Sequence[Sequence[float]]:
         """
         Synchronously retrieves embeddings for a list of text.
 

@@ -3,14 +3,13 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, AsyncIterator, ContextManager, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, AsyncIterator, ContextManager, Dict, List, Optional, Sequence
 
 import anthropic
 import openai
 from anthropic import AsyncAnthropic
 from anthropic.types import Message, MessageParam, MessageStreamEvent
 from openai import AsyncAzureOpenAI, AsyncOpenAI, OpenAI
-from openai.types import Embedding
 from openai.types.chat import ChatCompletion, ChatCompletionChunk
 from typing_extensions import override
 
@@ -39,10 +38,10 @@ class WrappedClient(ABC):
     def catch_and_convert_errors(self) -> ContextManager[None]: ...
 
     @abstractmethod
-    async def get_embeddings(self, input_texts: List[str], model: str) -> List[List[float]]: ...
+    async def get_embeddings(self, input_texts: List[str], model: str) -> Sequence[Sequence[float]]: ...
 
     @abstractmethod
-    def get_embeddings_sync(self, input_texts: List[str], model: str) -> List[List[float]]: ...
+    def get_embeddings_sync(self, input_texts: List[str], model: str) -> Sequence[Sequence[float]]: ...
 
     @abstractmethod
     async def get_transcription(self, audio_path: Path, model: str) -> str: ...
@@ -101,13 +100,13 @@ class WrappedOpenAIClient(WrappedClient):
             raise AuthenticationError(f"OpenAI Error: {e.message}") from e
 
     @override
-    async def get_embeddings(self, input_texts: List[str], model: str) -> List[List[float]]:
+    async def get_embeddings(self, input_texts: List[str], model: str) -> Sequence[Sequence[float]]:
         embeddings = (await self._client.embeddings.create(input=input_texts, model=model)).data
         sorted_embeddings = sorted(embeddings, key=lambda e: e.index)
         return [result.embedding for result in sorted_embeddings]
 
     @override
-    def get_embeddings_sync(self, input_texts: List[str], model: str) -> List[List[float]]:
+    def get_embeddings_sync(self, input_texts: List[str], model: str) -> Sequence[Sequence[float]]:
         embeddings = self._sync_client.embeddings.create(input=input_texts, model=model).data
         sorted_embeddings = sorted(embeddings, key=lambda e: e.index)
         return [result.embedding for result in sorted_embeddings]
@@ -204,11 +203,11 @@ class WrappedAnthropicClient(WrappedClient):
             raise AuthenticationError(f"Anthropic Error: {e.message}") from e
 
     @override
-    async def get_embeddings(self, input_texts: List[str], model: str) -> List[List[float]]:
+    async def get_embeddings(self, input_texts: List[str], model: str) -> Sequence[Sequence[float]]:
         raise InvalidModelError()
 
     @override
-    def get_embeddings_sync(self, input_texts: List[str], model: str) -> List[List[float]]:
+    def get_embeddings_sync(self, input_texts: List[str], model: str) -> Sequence[Sequence[float]]:
         raise InvalidModelError()
 
     @override
