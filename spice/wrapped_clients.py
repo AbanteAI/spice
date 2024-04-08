@@ -18,11 +18,10 @@ from PIL import Image
 from typing_extensions import override
 
 from spice.errors import APIConnectionError, AuthenticationError, InvalidModelError, SpiceError
-from spice.models import GPT_35_TURBO_0125, Model
-from spice.providers import OPEN_AI
 from spice.spice_message import SpiceMessage
 
 if TYPE_CHECKING:
+    from spice.models import Model
     from spice.spice import SpiceCallArgs
 
 
@@ -63,7 +62,7 @@ class WrappedClient(ABC):
     def get_embeddings_sync(self, input_texts: List[str], model: str) -> Sequence[Sequence[float]]: ...
 
     @abstractmethod
-    async def get_transcription(self, audio_path: Path, model: str) -> str: ...
+    async def get_transcription(self, audio_path: Path, model: str) -> tuple[str, float]: ...
 
 
 class WrappedOpenAIClient(WrappedClient):
@@ -118,6 +117,8 @@ class WrappedOpenAIClient(WrappedClient):
             raise AuthenticationError(f"OpenAI Error: {e.message}") from e
 
     def _get_encoding_for_model(self, model: Model | str) -> tiktoken.Encoding:
+        from spice.models import Model
+
         if isinstance(model, Model):
             model = model.name
         try:
@@ -182,13 +183,12 @@ class WrappedOpenAIClient(WrappedClient):
         return [result.embedding for result in sorted_embeddings]
 
     @override
-    async def get_transcription(self, audio_path: Path, model: str) -> str:
+    async def get_transcription(self, audio_path: Path, model: str) -> tuple[str, float]:
         audio_file = open(audio_path, "rb")
         transcript = await self._client.audio.transcriptions.create(
-            model=model,
-            file=audio_file,
+            model=model, file=audio_file, response_format="verbose_json"
         )
-        return transcript.text
+        return (transcript.text, transcript.duration)  # pyright: ignore
 
 
 class WrappedAzureClient(WrappedOpenAIClient):
@@ -283,6 +283,8 @@ class WrappedAnthropicClient(WrappedClient):
 
     @override
     def count_messages_tokens(self, messages: List[SpiceMessage], model: Model | str) -> int:
+        from spice.models import GPT_35_TURBO_0125
+
         return (
             self._fake_openai_client.count_messages_tokens(messages, GPT_35_TURBO_0125)
             * self._anthropic_token_multiplier
@@ -290,6 +292,8 @@ class WrappedAnthropicClient(WrappedClient):
 
     @override
     def count_string_tokens(self, message: str, model: Model | str, full_message: bool) -> int:
+        from spice.models import GPT_35_TURBO_0125
+
         return (
             self._fake_openai_client.count_string_tokens(message, GPT_35_TURBO_0125, full_message)
             * self._anthropic_token_multiplier
@@ -304,5 +308,5 @@ class WrappedAnthropicClient(WrappedClient):
         raise InvalidModelError()
 
     @override
-    async def get_transcription(self, audio_path: Path, model: str) -> str:
+    async def get_transcription(self, audio_path: Path, model: str) -> tuple[str, float]:
         raise InvalidModelError()

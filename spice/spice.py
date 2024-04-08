@@ -3,13 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from timeit import default_timer as timer
-from typing import AsyncIterator, Dict, List, Literal, Optional, Sequence, cast
+from typing import AsyncIterator, Callable, Dict, List, Literal, Optional, Sequence, cast
 
 from spice.errors import InvalidModelError
 from spice.models import EmbeddingModel, Model, TextModel, TranscriptionModel, get_model_from_name
 from spice.providers import Provider, get_provider_from_name
 from spice.spice_message import SpiceMessage
-from spice.utils import text_request_cost
+from spice.utils import embeddings_request_cost, text_request_cost, transcription_request_cost
 from spice.wrapped_clients import WrappedClient
 
 ResponseFormat = Dict[str, Literal["text", "json_object"]]
@@ -71,7 +71,14 @@ class StreamingSpiceResponse:
     Returned from a streaming llm call. Can be iterated over asynchronously to retrieve the content.
     """
 
-    def __init__(self, model: TextModel, call_args: SpiceCallArgs, client: WrappedClient, stream: AsyncIterator):
+    def __init__(
+        self,
+        model: TextModel,
+        call_args: SpiceCallArgs,
+        client: WrappedClient,
+        stream: AsyncIterator,
+        cost_callback: Callable[[float], None],
+    ):
         self._model = model
         self._call_args = call_args
         self._text = []
@@ -82,6 +89,8 @@ class StreamingSpiceResponse:
         self._finished = False
         self._client = client
         self._stream = stream
+        self._cost_added = 0
+        self._cost_callback = cost_callback
 
     def __aiter__(self):
         return self
@@ -122,6 +131,10 @@ class StreamingSpiceResponse:
             output_tokens = self._client.count_string_tokens(full_output, self._model, full_message=False)
 
         cost = text_request_cost(self._model, input_tokens, output_tokens)
+        if cost is not None:
+            new_cost = cost - self._cost_added
+            self._cost_added = cost
+            self._cost_callback(new_cost)
 
         return SpiceResponse(
             self._call_args,
@@ -185,6 +198,13 @@ class Spice:
 
         # TODO: Should we validate model aliases?
         self._model_aliases = model_aliases
+
+        self._total_cost: float = 0
+
+    @property
+    def total_cost(self) -> float:
+        """The total cost in cents of all api calls made through this Spice client."""
+        return self._total_cost
 
     def load_provider(self, provider: Provider | str):
         """
@@ -284,7 +304,10 @@ class Spice:
             chat_completion = await client.get_chat_completion_or_stream(call_args)
         end_time = timer()
         text, input_tokens, output_tokens = client.extract_text_and_tokens(chat_completion)
+
         cost = text_request_cost(text_model, input_tokens, output_tokens)
+        if cost is not None:
+            self._total_cost += cost
 
         response = SpiceResponse(call_args, text, end_time - start_time, input_tokens, output_tokens, True, cost)
         return response
@@ -325,7 +348,11 @@ class Spice:
         with client.catch_and_convert_errors():
             stream = await client.get_chat_completion_or_stream(call_args)
         stream = cast(AsyncIterator, stream)
-        return StreamingSpiceResponse(text_model, call_args, client, stream)
+
+        def cost_callback(cost):
+            self._total_cost += cost
+
+        return StreamingSpiceResponse(text_model, call_args, client, stream, cost_callback)
 
     def _get_embedding_model(self, model: Optional[Model | str]) -> EmbeddingModel:
         if model is None:
@@ -366,6 +393,11 @@ class Spice:
         embedding_model = self._get_embedding_model(model)
         client = self._get_client(embedding_model, provider)
 
+        input_tokens = sum(client.count_string_tokens(text, embedding_model, False) for text in input_texts)
+        cost = embeddings_request_cost(embedding_model, input_tokens)
+        if cost is not None:
+            self._total_cost += cost
+
         return await client.get_embeddings(input_texts, embedding_model.name)
 
     def get_embeddings_sync(
@@ -390,6 +422,11 @@ class Spice:
         embedding_model = self._get_embedding_model(model)
         client = self._get_client(embedding_model, provider)
 
+        input_tokens = sum(client.count_string_tokens(text, embedding_model, False) for text in input_texts)
+        cost = embeddings_request_cost(embedding_model, input_tokens)
+        if cost is not None:
+            self._total_cost += cost
+
         return client.get_embeddings_sync(input_texts, embedding_model.name)
 
     def _get_transcription_model(self, model: Model | str) -> TranscriptionModel:
@@ -406,7 +443,7 @@ class Spice:
 
     async def get_transcription(
         self,
-        audio_path: Path,
+        audio_path: Path | str,
         model: TranscriptionModel | str,
         provider: Optional[Provider | str] = None,
     ) -> str:
@@ -422,8 +459,14 @@ class Spice:
             provider: The provider to use. If specified, will override the model's default provider if known. Must be specified if an unknown model is used.
         """
 
-        transciption_model = self._get_transcription_model(model)
-        client = self._get_client(transciption_model, provider)
+        transcription_model = self._get_transcription_model(model)
+        client = self._get_client(transcription_model, provider)
 
-        # TODO: Get length of audio file so we can add to cost
-        return await client.get_transcription(audio_path, transciption_model.name)
+        transcription, input_length = await client.get_transcription(
+            Path(audio_path).expanduser().resolve(), transcription_model.name
+        )
+        cost = transcription_request_cost(transcription_model, input_length)
+        if cost is not None:
+            self._total_cost += cost
+
+        return transcription

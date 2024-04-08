@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import List, Optional
 
-from spice.errors import InvalidModelError
 from spice.providers import ANTHROPIC, OPEN_AI, Provider
 
 # Used to fetch a model by name

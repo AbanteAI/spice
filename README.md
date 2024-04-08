@@ -72,6 +72,11 @@ for i, response in enumerate(responses, 1):
     print(f"\nModel {i} response:")
     print(response.text)
     print(f"Characters per second: {response.characters_per_second:.2f}")
+    if response.cost is not None:
+        print(f"Cost: ${response.cost / 100:.4f}")
+
+# Spice also tracks the total cost over multiple models and providers
+print(f"Total Cost: ${client.total_cost / 100:.4f}")
 ```
 
 ### Using unknown models
@@ -99,4 +104,18 @@ print(response.text)
 # Creating the model automatically registers it in Spice's model list, so listing the provider is no longer needed
 response = await client.get_response(messages=messages, model="first-gpt35")
 print(response.text)
+```
+
+### Embeddings and Transcriptions
+
+```python
+client = Spice()
+input_texts = ["Once upon a time...", "Cinderella"]
+
+# Spice can easily fetch embeddings and audio transcriptions
+from spice.models import TEXT_EMBEDDING_ADA_002, WHISPER_1
+
+embeddings = await client.get_embeddings(input_texts, TEXT_EMBEDDING_ADA_002)
+transcription = await client.get_transcription("/path/to/audio/file", WHISPER_1)
+print(transcription)
 ```
