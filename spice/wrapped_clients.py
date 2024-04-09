@@ -278,14 +278,13 @@ class WrappedAnthropicClient(WrappedClient):
             pass
 
     _fake_openai_client = _FakeWrappedOpenAIClient()
-    # TODO: Figure out a good starting multiplier
-    _anthropic_token_multiplier = 1
+    _anthropic_token_multiplier = 1.25
 
     @override
     def count_messages_tokens(self, messages: List[SpiceMessage], model: Model | str) -> int:
         from spice.models import GPT_35_TURBO_0125
 
-        return (
+        return int(
             self._fake_openai_client.count_messages_tokens(messages, GPT_35_TURBO_0125)
             * self._anthropic_token_multiplier
         )
@@ -294,7 +293,7 @@ class WrappedAnthropicClient(WrappedClient):
     def count_string_tokens(self, message: str, model: Model | str, full_message: bool) -> int:
         from spice.models import GPT_35_TURBO_0125
 
-        return (
+        return int(
             self._fake_openai_client.count_string_tokens(message, GPT_35_TURBO_0125, full_message)
             * self._anthropic_token_multiplier
         )

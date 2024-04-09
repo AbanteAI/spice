@@ -38,22 +38,19 @@ class SpiceResponse:
     """The total text sent by the model."""
 
     total_time: float
-    """
-    How long it took for the response to be completed.
-    May be inaccurate for streamed responses if not iterated over and completed immediately.
-    """
+    """How long it took for the response to be completed. May be inaccurate for incomplete streamed responses."""
 
     input_tokens: int
-    """The number of input tokens given in this response. If response is interrupted, may not be exact."""
+    """The number of input tokens given in this response. May be inaccurate for incomplete streamed responses."""
 
     output_tokens: int
-    """The number of output tokens given by the model in this response. If response is interrupted, may not be exact."""
+    """The number of output tokens given by the model in this response. May be inaccurate for incomplete streamed responses."""
 
     completed: bool
-    """Whether or not this response was fully completed. This will only ever be false for streaming responses."""
+    """Whether or not this response was fully completed. This will only ever be false for incomplete streamed responses."""
 
     cost: Optional[float]
-    """The cost of this request in cents. May be inaccurate for some providers if response is interrupted. Will be None if the cost of the model used is not known."""
+    """The cost of this request in cents. May be inaccurate for incompleted streamed responses. Will be None if the cost of the model used is not known."""
 
     @property
     def total_tokens(self) -> int:
