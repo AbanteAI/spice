@@ -19,7 +19,7 @@ from openai.types.chat import ChatCompletion, ChatCompletionChunk
 from PIL import Image
 from typing_extensions import override
 
-from spice.errors import APIConnectionError, AuthenticationError, ImageError, InvalidModelError, SpiceError
+from spice.errors import APIConnectionError, APIError, AuthenticationError, ImageError, InvalidModelError, SpiceError
 from spice.spice_message import SpiceMessage
 
 if TYPE_CHECKING:
@@ -80,7 +80,7 @@ class WrappedOpenAIClient(WrappedClient):
         )
 
         # GPT-4-vision has low default max_tokens
-        if call_args.max_tokens is None and call_args.model == "gpt-4-vision-preview":
+        if call_args.max_tokens is None and "gpt-4" in call_args.model and "vision-preview" in call_args.model:
             max_tokens = 4096
         else:
             max_tokens = call_args.max_tokens
@@ -114,9 +114,11 @@ class WrappedOpenAIClient(WrappedClient):
         try:
             yield
         except openai.APIConnectionError as e:
-            raise APIConnectionError(f"OpenAI Error: {e.message}") from e
+            raise APIConnectionError(f"OpenAI Connection Error: {e.message}") from e
         except openai.AuthenticationError as e:
-            raise AuthenticationError(f"OpenAI Error: {e.message}") from e
+            raise AuthenticationError(f"OpenAI Authentication Error: {e.message}") from e
+        except openai.APIStatusError as e:
+            raise APIError(f"OpenAI Status Error: {e.message}") from e
 
     def _get_encoding_for_model(self, model: Model | str) -> tiktoken.Encoding:
         from spice.models import Model
@@ -213,13 +215,19 @@ class WrappedAnthropicClient(WrappedClient):
         system = ""
         converted_messages: List[MessageParam] = []
         start = True
-        cur_role = ""  # TODO: Check if assistant first messages work; API says they don't so they probably don't
+        cur_role = ""
         for message in messages:
             if message["role"] == "system" and start:
                 if system:
                     system += "\n\n"
                 system += message["content"]
                 continue
+
+            # First message must be user, and text content cannot be empty / whitespace only
+            if start and message["role"] != "user":
+                cur_role = "user"
+                converted_messages.append({"role": "user", "content": [{"type": "text", "text": "-"}]})
+
             start = False
 
             # Anthropic messages can either be a string or list of objects; since user messages can have images, they should always be a list objects.
@@ -255,7 +263,7 @@ class WrappedAnthropicClient(WrappedClient):
                     else:
                         first = cur_role == "user"
                         content = []
-                        for sub_content in message["content"]:  # pyright: ignore TODO: Why is pyright complaining here?
+                        for sub_content in message["content"]:
                             if sub_content["type"] == "text":
                                 content.append(
                                     {"type": "text", "text": ("\n\n" if first else "") + sub_content["text"]}
@@ -264,18 +272,18 @@ class WrappedAnthropicClient(WrappedClient):
                                 # This can either be base64 encoded data or a url; Anthropic only accepts base64 encoded data
                                 image = sub_content["image_url"]["url"]
                                 if image.startswith("http"):
-                                    media_type = mimetypes.guess_type(image)
+                                    media_type = mimetypes.guess_type(image)[0]
                                     if media_type not in ["image/jpeg", "image/png", "image/gif", "image/webp"]:
                                         raise ImageError(
-                                            f"Invalid image {image}: Image must be a png, jpg, gif, or webp image."
+                                            f"Invalid image at {image}: Image must be a png, jpg, gif, or webp image."
                                         )
                                     try:
                                         image = base64.b64encode(httpx.get(image).content).decode("utf-8")
                                     except:
                                         raise ImageError(f"Error fetching image {image}.")
                                 else:
-                                    # TODO: This probably doesn't work; do we just need to only allow file / url images? (we could manually b64 encode file images)
-                                    media_type = "image/jpeg"
+                                    media_type = image.split(";", maxsplit=1)[0].replace("data:", "")
+                                    image = image.split(";", maxsplit=1)[1]
 
                                 content.append(
                                     {
@@ -354,9 +362,11 @@ class WrappedAnthropicClient(WrappedClient):
         try:
             yield
         except anthropic.APIConnectionError as e:
-            raise APIConnectionError(f"Anthropic Error: {e.message}") from e
+            raise APIConnectionError(f"Anthropic Connection Error: {e.message}") from e
         except anthropic.AuthenticationError as e:
-            raise AuthenticationError(f"Anthropic Error: {e.message}") from e
+            raise AuthenticationError(f"Anthropic Authentication Error: {e.message}") from e
+        except anthropic.APIStatusError as e:
+            raise APIError(f"Anthropic Status Error: {e.message}") from e
 
     # Anthropic doesn't give us a way to count tokens, so we just use OpenAI's token counting functions and multiply by a pre-determined multiplier
     class _FakeWrappedOpenAIClient(WrappedOpenAIClient):
