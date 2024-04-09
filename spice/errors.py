@@ -20,3 +20,7 @@ class InvalidProviderError(SpiceError):
 
 class NoAPIKeyError(SpiceError):
     pass
+
+
+class ImageError(SpiceError):
+    pass
