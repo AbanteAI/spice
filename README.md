@@ -1,5 +1,27 @@
 # Spice
 
+Spice is an open source library for working with AI projects in Python. Spice simplifies LLM creations, embeddings, and transcriptions while using a single API for multiple providers, making switching between providers such as OpenAI and Anthropic incredibly simple.
+
+Spice also gathers useful information such as tokens used, time spent, and cost for each call, making it easily available no matter which LLM provider is being used.
+
+## Install
+
+Spice is listed under `spiceai` on PyPi. To install, simply `pip install spiceai`.
+
+### API Keys
+
+Spice will automatically load `.env` files in your current directory. To add an API key, either use a `.env` file or set the environment variables manually. These are the current environment variables that Spice will use:
+
+```bash
+OPENAI_API_KEY=<api_key> # Required for OpenAI calls
+OPENAI_API_BASE=<base_url> # If set, will set the base url for OpenAI calls.
+
+AZURE_OPENAI_KEY=<api_key> # Required for Azure OpenAI calls
+AZURE_OPENAI_ENDPOINT=<endpoint_url> # Required for Azure OpenAI calls.
+
+ANTHROPIC_API_KEY=<api_key> # Required for Anthropic calls
+```
+
 ## Usage Examples
 
 All examples can be found in [scripts/run.py](scripts/run.py)
