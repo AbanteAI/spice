@@ -3,16 +3,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from timeit import default_timer as timer
-from typing import AsyncIterator, Dict, List, Literal, Optional, cast
+from typing import AsyncIterator, Callable, Dict, List, Literal, Optional, Sequence, cast
 
 from spice.errors import InvalidModelError
-from spice.models import EmbeddingModel, Model, TextModel, TranscriptionModel, UnknownModel, get_model_from_name
+from spice.models import EmbeddingModel, Model, TextModel, TranscriptionModel, get_model_from_name
 from spice.providers import Provider, get_provider_from_name
 from spice.spice_message import SpiceMessage
-from spice.utils import count_messages_tokens, count_string_tokens
+from spice.utils import embeddings_request_cost, text_request_cost, transcription_request_cost
 from spice.wrapped_clients import WrappedClient
 
-ResponseFormatType = Dict[str, Literal["text", "json"]]
+ResponseFormat = Dict[str, Literal["text", "json_object"]]
 
 
 @dataclass
@@ -22,7 +22,7 @@ class SpiceCallArgs:
     stream: bool = False
     temperature: Optional[float] = None
     max_tokens: Optional[int] = None
-    response_format: Optional[ResponseFormatType] = None
+    response_format: Optional[ResponseFormat] = None
 
 
 @dataclass
@@ -38,21 +38,19 @@ class SpiceResponse:
     """The total text sent by the model."""
 
     total_time: float
-    """
-    How long it took for the response to be completed.
-    May be inaccurate for streamed responses if not iterated over and completed immediately.
-    """
+    """How long it took for the response to be completed. May be inaccurate for incomplete streamed responses."""
 
     input_tokens: int
-    """The number of input tokens given in this response."""
+    """The number of input tokens given in this response. May be inaccurate for incomplete streamed responses."""
 
     output_tokens: int
-    """The number of output tokens given by the model in this response."""
+    """The number of output tokens given by the model in this response. May be inaccurate for incomplete streamed responses."""
 
     completed: bool
-    """Whether or not this response was fully completed. This will only ever be false for streaming responses."""
+    """Whether or not this response was fully completed. This will only ever be false for incomplete streamed responses."""
 
-    # TODO: Add cost
+    cost: Optional[float]
+    """The cost of this request in cents. May be inaccurate for incompleted streamed responses. Will be None if the cost of the model used is not known."""
 
     @property
     def total_tokens(self) -> int:
@@ -70,7 +68,15 @@ class StreamingSpiceResponse:
     Returned from a streaming llm call. Can be iterated over asynchronously to retrieve the content.
     """
 
-    def __init__(self, call_args: SpiceCallArgs, client: WrappedClient, stream: AsyncIterator):
+    def __init__(
+        self,
+        model: TextModel,
+        call_args: SpiceCallArgs,
+        client: WrappedClient,
+        stream: AsyncIterator,
+        cost_callback: Callable[[float], None],
+    ):
+        self._model = model
         self._call_args = call_args
         self._text = []
         self._start_time = timer()
@@ -80,6 +86,8 @@ class StreamingSpiceResponse:
         self._finished = False
         self._client = client
         self._stream = stream
+        self._cost_added = 0
+        self._cost_callback = cost_callback
 
     def __aiter__(self):
         return self
@@ -112,16 +120,18 @@ class StreamingSpiceResponse:
 
         full_output = "".join(self._text)
 
-        # TODO: this message counting methods are just for OpenAI,
-        # if other providers also don't send token counts when streaming or are interrupted
-        # then we need to add counting methods for them as well.
-        # Easiest way to do this would be to add count tokens functions to wrapped client
         input_tokens = self._input_tokens
         if input_tokens is None:
-            input_tokens = count_messages_tokens(self._call_args.messages, self._call_args.model)
+            input_tokens = self._client.count_messages_tokens(self._call_args.messages, self._model)
         output_tokens = self._output_tokens
         if output_tokens is None:
-            output_tokens = count_string_tokens(full_output, self._call_args.model, full_message=False)
+            output_tokens = self._client.count_string_tokens(full_output, self._model, full_message=False)
+
+        cost = text_request_cost(self._model, input_tokens, output_tokens)
+        if cost is not None:
+            new_cost = cost - self._cost_added
+            self._cost_added = cost
+            self._cost_callback(new_cost)
 
         return SpiceResponse(
             self._call_args,
@@ -130,6 +140,7 @@ class StreamingSpiceResponse:
             input_tokens,
             output_tokens,
             self._finished,
+            cost,
         )
 
     async def complete_response(self) -> SpiceResponse:
@@ -170,7 +181,7 @@ class Spice:
             text_model = get_model_from_name(default_text_model)
         else:
             text_model = default_text_model
-        if text_model and not isinstance(text_model, (TextModel, UnknownModel)):
+        if text_model and not isinstance(text_model, TextModel):
             raise InvalidModelError("Default text model must be a text model")
         self._default_text_model = text_model
 
@@ -178,12 +189,19 @@ class Spice:
             embeddings_model = get_model_from_name(default_embeddings_model)
         else:
             embeddings_model = default_embeddings_model
-        if embeddings_model and not isinstance(embeddings_model, (EmbeddingModel, UnknownModel)):
+        if embeddings_model and not isinstance(embeddings_model, EmbeddingModel):
             raise InvalidModelError("Default embeddings model must be an embeddings model")
         self._default_embeddings_model = embeddings_model
 
         # TODO: Should we validate model aliases?
         self._model_aliases = model_aliases
+
+        self._total_cost: float = 0
+
+    @property
+    def total_cost(self) -> float:
+        """The total cost in cents of all api calls made through this Spice client."""
+        return self._total_cost
 
     def load_provider(self, provider: Provider | str):
         """
@@ -205,7 +223,7 @@ class Spice:
                 raise InvalidModelError("Provider is required when unknown models are used")
             return model.provider.get_client()
 
-    def _get_text_model(self, model: Optional[Model | str]) -> TextModel | UnknownModel:
+    def _get_text_model(self, model: Optional[Model | str]) -> TextModel:
         if model is None:
             if self._default_text_model is None:
                 raise InvalidModelError("Model is required when default text model is not set at initialization")
@@ -217,7 +235,7 @@ class Spice:
         if isinstance(model, str):
             model = get_model_from_name(model)
 
-        if not isinstance(model, (TextModel, UnknownModel)):
+        if not isinstance(model, TextModel):
             raise InvalidModelError(f"Model {model} is not a text model")
 
         return model
@@ -229,7 +247,7 @@ class Spice:
         stream: bool,
         temperature: Optional[float],
         max_tokens: Optional[int],
-        response_format: Optional[ResponseFormatType],
+        response_format: Optional[ResponseFormat],
     ):
         # Not all providers support response format
         if response_format is not None:
@@ -252,7 +270,7 @@ class Spice:
         provider: Optional[Provider | str] = None,
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
-        response_format: Optional[ResponseFormatType] = None,
+        response_format: Optional[ResponseFormat] = None,
     ) -> SpiceResponse:
         """
         Asynchronously retrieves a chat completion response.
@@ -282,11 +300,13 @@ class Spice:
         with client.catch_and_convert_errors():
             chat_completion = await client.get_chat_completion_or_stream(call_args)
         end_time = timer()
-        input_tokens, output_tokens = client.get_input_and_output_tokens(chat_completion)
+        text, input_tokens, output_tokens = client.extract_text_and_tokens(chat_completion)
 
-        response = SpiceResponse(
-            call_args, client.extract_text(chat_completion), end_time - start_time, input_tokens, output_tokens, True
-        )
+        cost = text_request_cost(text_model, input_tokens, output_tokens)
+        if cost is not None:
+            self._total_cost += cost
+
+        response = SpiceResponse(call_args, text, end_time - start_time, input_tokens, output_tokens, True, cost)
         return response
 
     async def stream_response(
@@ -296,7 +316,7 @@ class Spice:
         provider: Optional[Provider | str] = None,
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
-        response_format: Optional[ResponseFormatType] = None,
+        response_format: Optional[ResponseFormat] = None,
     ) -> StreamingSpiceResponse:
         """
         Asynchronously retrieves a chat completion stream that can be iterated over asynchronously.
@@ -325,9 +345,13 @@ class Spice:
         with client.catch_and_convert_errors():
             stream = await client.get_chat_completion_or_stream(call_args)
         stream = cast(AsyncIterator, stream)
-        return StreamingSpiceResponse(call_args, client, stream)
 
-    def _get_embedding_model(self, model: Optional[Model | str]) -> EmbeddingModel | UnknownModel:
+        def cost_callback(cost):
+            self._total_cost += cost
+
+        return StreamingSpiceResponse(text_model, call_args, client, stream, cost_callback)
+
+    def _get_embedding_model(self, model: Optional[Model | str]) -> EmbeddingModel:
         if model is None:
             if self._default_embeddings_model is None:
                 raise InvalidModelError("Model is required when default embeddings model is not set at initialization")
@@ -339,7 +363,7 @@ class Spice:
         if isinstance(model, str):
             model = get_model_from_name(model)
 
-        if not isinstance(model, (EmbeddingModel, UnknownModel)):
+        if not isinstance(model, EmbeddingModel):
             raise InvalidModelError(f"Model {model} is not a embedding model")
 
         return model
@@ -349,7 +373,7 @@ class Spice:
         input_texts: List[str],
         model: Optional[EmbeddingModel | str] = None,
         provider: Optional[Provider | str] = None,
-    ) -> List[List[float]]:
+    ) -> Sequence[Sequence[float]]:
         """
         Asynchronously retrieves embeddings for a list of text.
 
@@ -366,6 +390,11 @@ class Spice:
         embedding_model = self._get_embedding_model(model)
         client = self._get_client(embedding_model, provider)
 
+        input_tokens = sum(client.count_string_tokens(text, embedding_model, False) for text in input_texts)
+        cost = embeddings_request_cost(embedding_model, input_tokens)
+        if cost is not None:
+            self._total_cost += cost
+
         return await client.get_embeddings(input_texts, embedding_model.name)
 
     def get_embeddings_sync(
@@ -373,7 +402,7 @@ class Spice:
         input_texts: List[str],
         model: Optional[EmbeddingModel | str] = None,
         provider: Optional[Provider | str] = None,
-    ) -> List[List[float]]:
+    ) -> Sequence[Sequence[float]]:
         """
         Synchronously retrieves embeddings for a list of text.
 
@@ -390,23 +419,28 @@ class Spice:
         embedding_model = self._get_embedding_model(model)
         client = self._get_client(embedding_model, provider)
 
+        input_tokens = sum(client.count_string_tokens(text, embedding_model, False) for text in input_texts)
+        cost = embeddings_request_cost(embedding_model, input_tokens)
+        if cost is not None:
+            self._total_cost += cost
+
         return client.get_embeddings_sync(input_texts, embedding_model.name)
 
-    def _get_transcription_model(self, model: Model | str) -> TranscriptionModel | UnknownModel:
+    def _get_transcription_model(self, model: Model | str) -> TranscriptionModel:
         if self._model_aliases is not None and model in self._model_aliases:
             model = self._model_aliases[model]
 
         if isinstance(model, str):
             model = get_model_from_name(model)
 
-        if not isinstance(model, (TranscriptionModel, UnknownModel)):
+        if not isinstance(model, TranscriptionModel):
             raise InvalidModelError(f"Model {model} is not a transcription model")
 
         return model
 
     async def get_transcription(
         self,
-        audio_path: Path,
+        audio_path: Path | str,
         model: TranscriptionModel | str,
         provider: Optional[Provider | str] = None,
     ) -> str:
@@ -422,7 +456,14 @@ class Spice:
             provider: The provider to use. If specified, will override the model's default provider if known. Must be specified if an unknown model is used.
         """
 
-        transciption_model = self._get_transcription_model(model)
-        client = self._get_client(transciption_model, provider)
+        transcription_model = self._get_transcription_model(model)
+        client = self._get_client(transcription_model, provider)
 
-        return await client.get_transcription(audio_path, transciption_model.name)
+        transcription, input_length = await client.get_transcription(
+            Path(audio_path).expanduser().resolve(), transcription_model.name
+        )
+        cost = transcription_request_cost(transcription_model, input_length)
+        if cost is not None:
+            self._total_cost += cost
+
+        return transcription

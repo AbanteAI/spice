@@ -72,6 +72,11 @@ async def multiple_providers_example():
         print(f"\nModel {i} response:")
         print(response.text)
         print(f"Characters per second: {response.characters_per_second:.2f}")
+        if response.cost is not None:
+            print(f"Cost: ${response.cost / 100:.4f}")
+
+    # Spice also tracks the total cost over multiple models and providers
+    print(f"Total Cost: ${client.total_cost / 100:.4f}")
 
 
 async def azure_example():
@@ -99,6 +104,18 @@ async def azure_example():
     print(response.text)
 
 
+async def embeddings_and_transcription_example():
+    client = Spice()
+    input_texts = ["Once upon a time...", "Cinderella"]
+
+    # Spice can easily fetch embeddings and audio transcriptions
+    from spice.models import TEXT_EMBEDDING_ADA_002, WHISPER_1
+
+    embeddings = await client.get_embeddings(input_texts, TEXT_EMBEDDING_ADA_002)
+    transcription = await client.get_transcription("~/.mentat/logs/audio/talk_transcription.wav", WHISPER_1)
+    print(transcription)
+
+
 async def run_all_examples():
     print("Running Azure example:")
     await azure_example()
@@ -108,6 +125,8 @@ async def run_all_examples():
     await streaming_example()
     print("\n\nRunning multiple providers example:")
     await multiple_providers_example()
+    print("\n\nRunning embeddings and transcription example:")
+    await embeddings_and_transcription_example()
 
 
 if __name__ == "__main__":
