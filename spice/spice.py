@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import glob
+import json
 from dataclasses import dataclass
+from json import JSONDecodeError
 from pathlib import Path
 from timeit import default_timer as timer
 from typing import AsyncIterator, Callable, Collection, Dict, List, Literal, Optional, Sequence, cast
 
+import httpx
 from openai.types.chat.completion_create_params import ResponseFormat
 
 from spice.errors import InvalidModelError, UnknownModelError
@@ -197,6 +201,7 @@ class Spice:
         self._model_aliases = model_aliases
 
         self._total_cost: float = 0
+        self._prompts: Dict[str, str] = {}
 
     @property
     def total_cost(self) -> float:
@@ -474,3 +479,120 @@ class Spice:
             self._total_cost += cost
 
         return transcription
+
+    ### Prompts ###
+    def store_prompt(self, prompt: str, name: str):
+        """
+        Stores a prompt under the given name
+
+        Args:
+            prompt: The prompt to store.
+
+            name: The name of the prompt. If the name collides with the name of a previously loaded prompt, the previous prompt will be overwritten.
+        """
+
+        if name in self._prompts:
+            # Overwriting prompt; should we do anything?
+            pass
+        self._prompts[name] = prompt
+
+    def get_prompt(self, name: str) -> str:
+        """
+        Gets the prompt currently mapped to the given name.
+
+        Args:
+            name: The name of the prompt.
+        """
+
+        return self._prompts[name]
+
+    def load_prompt(self, file_path: Path | str, name: Optional[str] = None):
+        """
+        Loads a prompt from the given file.
+
+        Args:
+            file_path: The path to the file. Must be a text encoded file.
+
+            name: The name of the prompt. If no name is given, the name will be the file name without the extension; i.e., the name of /path/to/prompt.txt will be `prompt`.
+            If the name collides with the name of a previously loaded prompt, the previous prompt will be overwritten.
+        """
+
+        file_path = Path(file_path).expanduser().resolve()
+
+        try:
+            prompt = file_path.read_text()
+        except (UnicodeDecodeError, FileNotFoundError):
+            raise
+
+        if name is None:
+            name = file_path.name.rsplit(".", 1)[0]
+
+        self.store_prompt(prompt, name)
+
+    def load_dir(self, dir_path: Path | str):
+        """
+        Loads a prompts from a given directory. Will recursively load all text encoded .txt files in the directory and its subdirectories.
+        Prompt names will be the filenames with their .txt extension stripped with a `.` separating each subdirectory. For example, this directory would have these prompt names:
+        If any name collides with the name of a previously loaded prompt, the previous prompt will be overwritten.
+
+        ```
+        dir_path/
+            sub_dir/
+                prompt_1.txt        - sub_dir.prompt_1
+                not_a_prompt.jpg
+            prompt_2.txt            - prompt_2
+            another_prompt.txt      - another_prompt.txt
+        ```
+
+        Args:
+            dir_path: The path to the directory.
+        """
+
+        dir_path = Path(dir_path).expanduser().resolve()
+        if not dir_path.exists():
+            raise FileNotFoundError()
+
+        file_paths = glob.glob(f"{dir_path}/**/*.txt", recursive=True)
+        for file_path in file_paths:
+            file_path = Path(file_path)
+            full_path = dir_path / file_path
+
+            try:
+                prompt = full_path.read_text()
+            except (UnicodeDecodeError, FileNotFoundError):
+                raise
+
+            name = ".".join(file_path.parts)
+            self.store_prompt(prompt, name)
+
+    def load_url(self, url: str):
+        """
+        Loads a prompt from the given url. Will send a GET request to the url and expects a response with the following schema:
+        ```
+        {
+            "prompts": [
+                {
+                    "name": "<prompt_name>",
+                    "prompt": "<prompt>"
+                }, ...
+            ]
+        }
+        ```
+        If any name collides with the name of a previously loaded prompt, the previous prompt will be overwritten.
+
+        Args:
+            url: The url.
+        """
+
+        raw_json = httpx.get(url).content.decode("utf-8")
+        try:
+            prompts = json.loads(raw_json)
+        except JSONDecodeError:
+            raise
+
+        try:
+            for prompt_object in prompts["prompts"]:
+                name, prompt = prompt_object["name"], prompt_object["prompt"]
+                self.store_prompt(prompt, name)
+        except:
+            raise
