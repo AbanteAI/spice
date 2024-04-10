@@ -6,7 +6,7 @@ import mimetypes
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, AsyncIterator, ContextManager, Dict, List, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Any, AsyncIterator, Collection, ContextManager, Dict, List, Optional, Sequence, Tuple
 
 import anthropic
 import httpx
@@ -20,7 +20,7 @@ from PIL import Image
 from typing_extensions import override
 
 from spice.errors import APIConnectionError, APIError, AuthenticationError, ImageError, InvalidModelError, SpiceError
-from spice.spice_message import SpiceMessage
+from spice.spice_message import VALID_MIMETYPES, SpiceMessage
 
 if TYPE_CHECKING:
     from spice.models import Model
@@ -43,7 +43,7 @@ class WrappedClient(ABC):
     def catch_and_convert_errors(self) -> ContextManager[None]: ...
 
     @abstractmethod
-    def count_messages_tokens(self, messages: List[SpiceMessage], model: Model | str) -> int:
+    def count_messages_tokens(self, messages: Collection[SpiceMessage], model: Model | str) -> int:
         """
         Returns the number of tokens used by a prompt if it was sent to an API for a chat completion.
         """
@@ -134,7 +134,7 @@ class WrappedOpenAIClient(WrappedClient):
             return tiktoken.get_encoding("cl100k_base")
 
     @override
-    def count_messages_tokens(self, messages: List[SpiceMessage], model: Model | str) -> int:
+    def count_messages_tokens(self, messages: Collection[SpiceMessage], model: Model | str) -> int:
         """
         Adapted from https://platform.openai.com/docs/guides/text-generation/managing-tokens
         """
@@ -208,7 +208,7 @@ class WrappedAnthropicClient(WrappedClient):
     def __init__(self, key):
         self._client = AsyncAnthropic(api_key=key)
 
-    def _convert_messages(self, messages: List[SpiceMessage]) -> Tuple[str, List[MessageParam]]:
+    def _convert_messages(self, messages: Collection[SpiceMessage]) -> Tuple[str, List[MessageParam]]:
         # Anthropic handles both images and system messages different from OpenAI, only allows alternating user / assistant messages,
         # and doesn't support tools / function calling (still in beta, and doesn't support streaming)
 
@@ -272,18 +272,21 @@ class WrappedAnthropicClient(WrappedClient):
                                 # This can either be base64 encoded data or a url; Anthropic only accepts base64 encoded data
                                 image = sub_content["image_url"]["url"]
                                 if image.startswith("http"):
-                                    media_type = mimetypes.guess_type(image)[0]
-                                    if media_type not in ["image/jpeg", "image/png", "image/gif", "image/webp"]:
-                                        raise ImageError(
-                                            f"Invalid image at {image}: Image must be a png, jpg, gif, or webp image."
-                                        )
                                     try:
-                                        image = base64.b64encode(httpx.get(image).content).decode("utf-8")
+                                        response = httpx.get(image)
                                     except:
                                         raise ImageError(f"Error fetching image {image}.")
+
+                                    media_type = response.headers.get("content-type", mimetypes.guess_type(image)[0])
+                                    image = base64.b64encode(response.content).decode("utf-8")
                                 else:
                                     media_type = image.split(";", maxsplit=1)[0].replace("data:", "")
-                                    image = image.split(";", maxsplit=1)[1]
+                                    image = image.split(";base64,", maxsplit=1)[1]
+
+                                if media_type not in VALID_MIMETYPES:
+                                    raise ImageError(
+                                        f"Invalid image at {image}: Image must be a png, jpg, gif, or webp image."
+                                    )
 
                                 content.append(
                                     {
@@ -377,7 +380,7 @@ class WrappedAnthropicClient(WrappedClient):
     _anthropic_token_multiplier = 1.25
 
     @override
-    def count_messages_tokens(self, messages: List[SpiceMessage], model: Model | str) -> int:
+    def count_messages_tokens(self, messages: Collection[SpiceMessage], model: Model | str) -> int:
         from spice.models import GPT_35_TURBO_0125
 
         return int(

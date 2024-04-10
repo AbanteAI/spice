@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from timeit import default_timer as timer
-from typing import AsyncIterator, Callable, Dict, List, Literal, Optional, Sequence, cast
+from typing import AsyncIterator, Callable, Collection, Dict, List, Literal, Optional, Sequence, cast
 
 from spice.errors import InvalidModelError
 from spice.models import EmbeddingModel, Model, TextModel, TranscriptionModel, get_model_from_name
@@ -18,7 +18,7 @@ ResponseFormat = Dict[str, Literal["text", "json_object"]]
 @dataclass
 class SpiceCallArgs:
     model: str
-    messages: List[SpiceMessage]
+    messages: Collection[SpiceMessage]
     stream: bool = False
     temperature: Optional[float] = None
     max_tokens: Optional[int] = None
@@ -242,7 +242,7 @@ class Spice:
 
     def _fix_call_args(
         self,
-        messages: List[SpiceMessage],
+        messages: Collection[SpiceMessage],
         model: Model,
         stream: bool,
         temperature: Optional[float],
@@ -265,7 +265,7 @@ class Spice:
 
     async def get_response(
         self,
-        messages: List[SpiceMessage],
+        messages: Collection[SpiceMessage],
         model: Optional[TextModel | str] = None,
         provider: Optional[Provider | str] = None,
         temperature: Optional[float] = None,
@@ -312,7 +312,7 @@ class Spice:
 
     async def stream_response(
         self,
-        messages: List[SpiceMessage],
+        messages: Collection[SpiceMessage],
         model: Optional[TextModel | str] = None,
         provider: Optional[Provider | str] = None,
         temperature: Optional[float] = None,
