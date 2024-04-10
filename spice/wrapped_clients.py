@@ -58,10 +58,10 @@ class WrappedClient(ABC):
         """
 
     @abstractmethod
-    async def get_embeddings(self, input_texts: List[str], model: str) -> Sequence[Sequence[float]]: ...
+    async def get_embeddings(self, input_texts: List[str], model: str) -> List[List[float]]: ...
 
     @abstractmethod
-    def get_embeddings_sync(self, input_texts: List[str], model: str) -> Sequence[Sequence[float]]: ...
+    def get_embeddings_sync(self, input_texts: List[str], model: str) -> List[List[float]]: ...
 
     @abstractmethod
     async def get_transcription(self, audio_path: Path, model: str) -> tuple[str, float]: ...
@@ -76,7 +76,9 @@ class WrappedOpenAIClient(WrappedClient):
     async def get_chat_completion_or_stream(self, call_args: SpiceCallArgs):
         # WrappedOpenAIClient can be used with a proxy to a non openai llm, which may not support response_format
         maybe_response_format_kwargs: Dict[str, Any] = (
-            {"response_format": call_args.response_format} if call_args.response_format is not None else {}
+            {"response_format": call_args.response_format}
+            if call_args.response_format is not None and "type" in call_args.response_format
+            else {}
         )
 
         # GPT-4-vision has low default max_tokens
@@ -175,13 +177,13 @@ class WrappedOpenAIClient(WrappedClient):
         return len(encoding.encode(message, disallowed_special=())) + (4 if full_message else 0)
 
     @override
-    async def get_embeddings(self, input_texts: List[str], model: str) -> Sequence[Sequence[float]]:
+    async def get_embeddings(self, input_texts: List[str], model: str) -> List[List[float]]:
         embeddings = (await self._client.embeddings.create(input=input_texts, model=model)).data
         sorted_embeddings = sorted(embeddings, key=lambda e: e.index)
         return [result.embedding for result in sorted_embeddings]
 
     @override
-    def get_embeddings_sync(self, input_texts: List[str], model: str) -> Sequence[Sequence[float]]:
+    def get_embeddings_sync(self, input_texts: List[str], model: str) -> List[List[float]]:
         embeddings = self._sync_client.embeddings.create(input=input_texts, model=model).data
         sorted_embeddings = sorted(embeddings, key=lambda e: e.index)
         return [result.embedding for result in sorted_embeddings]
@@ -313,8 +315,8 @@ class WrappedAnthropicClient(WrappedClient):
 
     @override
     async def get_chat_completion_or_stream(self, call_args: SpiceCallArgs):
-        if call_args.response_format is not None:
-            raise SpiceError("response_format is not supported by Anthropic")
+        if call_args.response_format is not None and call_args.response_format.get("type", "text") != "text":
+            raise InvalidModelError("response_format is not supported by Anthropic")
 
         # max_tokens is required by anthropic api
         if call_args.max_tokens is None:
@@ -398,11 +400,11 @@ class WrappedAnthropicClient(WrappedClient):
         )
 
     @override
-    async def get_embeddings(self, input_texts: List[str], model: str) -> Sequence[Sequence[float]]:
+    async def get_embeddings(self, input_texts: List[str], model: str) -> List[List[float]]:
         raise InvalidModelError()
 
     @override
-    def get_embeddings_sync(self, input_texts: List[str], model: str) -> Sequence[Sequence[float]]:
+    def get_embeddings_sync(self, input_texts: List[str], model: str) -> List[List[float]]:
         raise InvalidModelError()
 
     @override

@@ -5,14 +5,14 @@ from pathlib import Path
 from timeit import default_timer as timer
 from typing import AsyncIterator, Callable, Collection, Dict, List, Literal, Optional, Sequence, cast
 
-from spice.errors import InvalidModelError
+from openai.types.chat.completion_create_params import ResponseFormat
+
+from spice.errors import InvalidModelError, UnknownModelError
 from spice.models import EmbeddingModel, Model, TextModel, TranscriptionModel, get_model_from_name
 from spice.providers import Provider, get_provider_from_name
 from spice.spice_message import SpiceMessage
 from spice.utils import embeddings_request_cost, text_request_cost, transcription_request_cost
 from spice.wrapped_clients import WrappedClient
-
-ResponseFormat = Dict[str, Literal["text", "json_object"]]
 
 
 @dataclass
@@ -220,7 +220,7 @@ class Spice:
             return provider.get_client()
         else:
             if model.provider is None:
-                raise InvalidModelError("Provider is required when unknown models are used")
+                raise UnknownModelError("Provider is required when unknown models are used")
             return model.provider.get_client()
 
     def _get_text_model(self, model: Optional[Model | str]) -> TextModel:
@@ -281,7 +281,8 @@ class Spice:
 
             model: The model to use. Must be a text based model. If no model is given, will use the default text model
             the client was initialized with. If the model is unknown to Spice, a provider must be given.
-            Will raise an InvalidModelError if the model is not a text model, or if the model is unknown and no provider was given.
+            Will raise an InvalidModelError if the model is not a text model.
+            Will raise an UnknownModelError if the model is unknown and no provider was given.
 
             provider: The provider to use. If specified, will override the model's default provider if known. Must be specified if an unknown model is used.
 
@@ -328,7 +329,8 @@ class Spice:
 
             model: The model to use. Must be a text based model. If no model is given, will use the default text model
             the client was initialized with. If the model is unknown to Spice, a provider must be given.
-            Will raise an InvalidModelError if the model is not a text model, or if the model is unknown and no provider was given.
+            Will raise an InvalidModelError if the model is not a text model.
+            Will raise an UnknownModelError if the model is unknown and no provider was given.
 
             provider: The provider to use. If specified, will override the model's default provider if known. Must be specified if an unknown model is used.
 
@@ -375,7 +377,7 @@ class Spice:
         input_texts: List[str],
         model: Optional[EmbeddingModel | str] = None,
         provider: Optional[Provider | str] = None,
-    ) -> Sequence[Sequence[float]]:
+    ) -> List[List[float]]:
         """
         Asynchronously retrieves embeddings for a list of text.
 
@@ -384,7 +386,8 @@ class Spice:
 
             model: The embedding model to use. If no model is given, will use the default embedding model
             the client was initialized with. If the model is unknown to Spice, a provider must be given.
-            Will raise an InvalidModelError if the model is not a embedding model, or if the model is unknown and no provider was given.
+            Will raise an InvalidModelError if the model is not a embedding model.
+            Will raise an UnknownModelError if the model is unknown and no provider was given.
 
             provider: The provider to use. If specified, will override the model's default provider if known. Must be specified if an unknown model is used.
         """
@@ -404,7 +407,7 @@ class Spice:
         input_texts: List[str],
         model: Optional[EmbeddingModel | str] = None,
         provider: Optional[Provider | str] = None,
-    ) -> Sequence[Sequence[float]]:
+    ) -> List[List[float]]:
         """
         Synchronously retrieves embeddings for a list of text.
 
@@ -413,7 +416,8 @@ class Spice:
 
             model: The embedding model to use. If no model is given, will use the default embedding model
             the client was initialized with. If the model is unknown to Spice, a provider must be given.
-            Will raise an InvalidModelError if the model is not a embedding model, or if the model is unknown and no provider was given.
+            Will raise an InvalidModelError if the model is not a embedding model.
+            Will raise an UnknownModelError if the model is unknown and no provider was given.
 
             provider: The provider to use. If specified, will override the model's default provider if known. Must be specified if an unknown model is used.
         """
@@ -453,7 +457,8 @@ class Spice:
             audio_path: The path to the audio file to transcribe.
 
             model: The model to use. Must be a transciption model. If the model is unknown to Spice, a provider must be given.
-            Will raise an InvalidModelError if the model is not a transciption model, or if the model is unknown and no provider was given.
+            Will raise an InvalidModelError if the model is not a transciption model.
+            Will raise an UnknownModelError if the model is unknown and no provider was given.
 
             provider: The provider to use. If specified, will override the model's default provider if known. Must be specified if an unknown model is used.
         """
