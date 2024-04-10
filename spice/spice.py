@@ -555,14 +555,17 @@ class Spice:
         file_paths = glob.glob(f"{dir_path}/**/*.txt", recursive=True)
         for file_path in file_paths:
             file_path = Path(file_path)
-            full_path = dir_path / file_path
 
             try:
-                prompt = full_path.read_text()
+                prompt = file_path.read_text()
             except (UnicodeDecodeError, FileNotFoundError):
-                raise
+                continue
 
-            name = ".".join(file_path.parts)
+            rel_path = file_path.relative_to(dir_path)
+            name = ".".join(
+                (part if i != len(rel_path.parts) - 1 else part.rsplit(".", 1)[0])
+                for i, part in enumerate(rel_path.parts)
+            )
             self.store_prompt(prompt, name)
 
     def load_url(self, url: str):
