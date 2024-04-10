@@ -56,7 +56,18 @@ class UnknownModel(TextModel, EmbeddingModel, TranscriptionModel):
 
 
 # TODO: Add more models
+GPT_4_TURBO = TextModel("gpt-4-turbo", OPEN_AI, input_cost=1000, output_cost=3000, context_length=128000)
+GPT_4_TURBO_2024_04_09 = TextModel(
+    "gpt-4-turbo-2024-04-09", OPEN_AI, input_cost=1000, output_cost=3000, context_length=128000
+)
+GPT_4_TURBO_PREVIEW = TextModel(
+    "gpt-4-turbo-preview", OPEN_AI, input_cost=1000, output_cost=3000, context_length=128000
+)
 GPT_4_0125_PREVIEW = TextModel("gpt-4-0125-preview", OPEN_AI, input_cost=1000, output_cost=3000, context_length=128000)
+GPT_4_1106_PREVIEW = TextModel("gpt-4-1106-preview", OPEN_AI, input_cost=1000, output_cost=3000, context_length=128000)
+GPT_4_VISION_PREVIEW = VisionModel(
+    "gpt-4-vision-preview", OPEN_AI, input_cost=1000, output_cost=3000, context_length=128000
+)
 GPT_4_1106_VISION_PREVIEW = VisionModel(
     "gpt-4-1106-vision-preview", OPEN_AI, input_cost=1000, output_cost=3000, context_length=128000
 )
