@@ -46,8 +46,11 @@ print(response.text)
 # You can set a default model for the client instead of passing it with each call
 client = Spice(default_text_model="claude-3-opus-20240229")
 
+# You can easily load prompts from files, directories, or even urls
+client.load_prompt("prompt.txt", name="my prompt")
+
 messages: List[SpiceMessage] = [
-    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "system", "content": client.get_prompt(name="my prompt")},
     {"role": "user", "content": "list 5 random words"},
 ]
 stream = await client.stream_response(messages=messages)

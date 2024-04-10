@@ -26,8 +26,11 @@ async def streaming_example():
     # You can set a default model for the client instead of passing it with each call
     client = Spice(default_text_model="claude-3-opus-20240229")
 
+    # You can easily load prompts from files, directories, or even urls
+    client.load_prompt("scripts/prompt.txt", name="my prompt")
+
     messages: List[SpiceMessage] = [
-        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "system", "content": client.get_prompt(name="my prompt")},
         {"role": "user", "content": "list 5 random words"},
     ]
     stream = await client.stream_response(messages=messages)
@@ -137,14 +140,14 @@ async def embeddings_and_transcription_example():
 
 
 async def run_all_examples():
-    print("Running Azure example:")
-    await azure_example()
     print("Running basic example:")
     await basic_example()
     print("\n\nRunning streaming example:")
     await streaming_example()
     print("\n\nRunning multiple providers example:")
     await multiple_providers_example()
+    print("Running Azure example:")
+    await azure_example()
     print("\n\nRunning vision example:")
     await vision_example()
     print("\n\nRunning embeddings and transcription example:")
