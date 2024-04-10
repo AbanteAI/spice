@@ -2,22 +2,24 @@ from __future__ import annotations
 
 import base64
 import io
+import mimetypes
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, AsyncIterator, ContextManager, Dict, List, Optional, Sequence
+from typing import TYPE_CHECKING, Any, AsyncIterator, ContextManager, Dict, List, Optional, Sequence, Tuple
 
 import anthropic
+import httpx
 import openai
 import tiktoken
 from anthropic import AsyncAnthropic
-from anthropic.types import Message, MessageParam, MessageStreamEvent
+from anthropic.types import Message, MessageParam, MessageStreamEvent, TextBlockParam
 from openai import AsyncAzureOpenAI, AsyncOpenAI, OpenAI
 from openai.types.chat import ChatCompletion, ChatCompletionChunk
 from PIL import Image
 from typing_extensions import override
 
-from spice.errors import APIConnectionError, AuthenticationError, InvalidModelError, SpiceError
+from spice.errors import APIConnectionError, APIError, AuthenticationError, ImageError, InvalidModelError, SpiceError
 from spice.spice_message import SpiceMessage
 
 if TYPE_CHECKING:
@@ -78,7 +80,7 @@ class WrappedOpenAIClient(WrappedClient):
         )
 
         # GPT-4-vision has low default max_tokens
-        if call_args.max_tokens is None and call_args.model == "gpt-4-vision-preview":
+        if call_args.max_tokens is None and "gpt-4" in call_args.model and "vision-preview" in call_args.model:
             max_tokens = 4096
         else:
             max_tokens = call_args.max_tokens
@@ -112,9 +114,11 @@ class WrappedOpenAIClient(WrappedClient):
         try:
             yield
         except openai.APIConnectionError as e:
-            raise APIConnectionError(f"OpenAI Error: {e.message}") from e
+            raise APIConnectionError(f"OpenAI Connection Error: {e.message}") from e
         except openai.AuthenticationError as e:
-            raise AuthenticationError(f"OpenAI Error: {e.message}") from e
+            raise AuthenticationError(f"OpenAI Authentication Error: {e.message}") from e
+        except openai.APIStatusError as e:
+            raise APIError(f"OpenAI Status Error: {e.message}") from e
 
     def _get_encoding_for_model(self, model: Model | str) -> tiktoken.Encoding:
         from spice.models import Model
@@ -204,15 +208,108 @@ class WrappedAnthropicClient(WrappedClient):
     def __init__(self, key):
         self._client = AsyncAnthropic(api_key=key)
 
+    def _convert_messages(self, messages: List[SpiceMessage]) -> Tuple[str, List[MessageParam]]:
+        # Anthropic handles both images and system messages different from OpenAI, only allows alternating user / assistant messages,
+        # and doesn't support tools / function calling (still in beta, and doesn't support streaming)
+
+        system = ""
+        converted_messages: List[MessageParam] = []
+        start = True
+        cur_role = ""
+        for message in messages:
+            if message["role"] == "system" and start:
+                if system:
+                    system += "\n\n"
+                system += message["content"]
+                continue
+
+            # First message must be user, and text content cannot be empty / whitespace only
+            if start and message["role"] != "user":
+                cur_role = "user"
+                converted_messages.append({"role": "user", "content": [{"type": "text", "text": "-"}]})
+
+            start = False
+
+            # Anthropic messages can either be a string or list of objects; since user messages can have images, they should always be a list objects.
+            # Assistant messages should always be strings to keep them simple.
+            match message["role"]:
+                case "system":
+                    if cur_role == "user":
+                        message_object: TextBlockParam = {"type": "text", "text": f"\n\nSystem:\n{message['content']}"}
+                        converted_messages[-1]["content"].append(message_object)  # pyright: ignore
+                    else:
+                        cur_role = "user"
+                        message_object: TextBlockParam = {"type": "text", "text": f"System:\n{message['content']}"}
+                        converted_messages.append({"role": "user", "content": [message_object]})
+                case "assistant":
+                    content = message.get("content", "")
+                    if content is None:
+                        content = ""
+                    if cur_role == "assistant":
+                        converted_messages[-1]["content"] += f"\n\n{content}"  # pyright: ignore
+                    else:
+                        cur_role = "assistant"
+                        converted_messages.append({"role": "assistant", "content": content})
+                case "user":
+                    if isinstance(message["content"], str):
+                        if cur_role == "user":
+                            converted_messages[-1]["content"].append(  # pyright: ignore
+                                {"type": "text", "text": f"\n\n{message['content']}"}
+                            )
+                        else:
+                            converted_messages.append(
+                                {"role": "user", "content": [{"type": "text", "text": f"{message['content']}"}]}
+                            )
+                    else:
+                        first = cur_role == "user"
+                        content = []
+                        for sub_content in message["content"]:
+                            if sub_content["type"] == "text":
+                                content.append(
+                                    {"type": "text", "text": ("\n\n" if first else "") + sub_content["text"]}
+                                )
+                            else:
+                                # This can either be base64 encoded data or a url; Anthropic only accepts base64 encoded data
+                                image = sub_content["image_url"]["url"]
+                                if image.startswith("http"):
+                                    media_type = mimetypes.guess_type(image)[0]
+                                    if media_type not in ["image/jpeg", "image/png", "image/gif", "image/webp"]:
+                                        raise ImageError(
+                                            f"Invalid image at {image}: Image must be a png, jpg, gif, or webp image."
+                                        )
+                                    try:
+                                        image = base64.b64encode(httpx.get(image).content).decode("utf-8")
+                                    except:
+                                        raise ImageError(f"Error fetching image {image}.")
+                                else:
+                                    media_type = image.split(";", maxsplit=1)[0].replace("data:", "")
+                                    image = image.split(";", maxsplit=1)[1]
+
+                                content.append(
+                                    {
+                                        "type": "image",
+                                        "source": {"type": "base64", "data": image, "media_type": media_type},
+                                    }
+                                )
+
+                            first = False
+                        if cur_role == "user":
+                            converted_messages[-1]["content"].extend(content)  # pyright: ignore
+                        else:
+                            converted_messages.append({"role": "user", "content": content})
+
+                    cur_role = "user"
+                case "tool":
+                    # Right now anthropic tool use is in beta and doesn't support some things like streaming, but once it releases we can modify this.
+                    pass
+                case "function":
+                    # Deprecated, nobody should use this
+                    pass
+
+        return system, converted_messages
+
     @override
     async def get_chat_completion_or_stream(self, call_args: SpiceCallArgs):
-        if call_args.messages[0]["role"] == "system":
-            system = call_args.messages[0]["content"]
-            messages = call_args.messages[1:]
-        else:
-            system = ""
-            messages = call_args.messages
-
         if call_args.response_format is not None:
             raise SpiceError("response_format is not supported by Anthropic")
 
@@ -227,15 +324,12 @@ class WrappedAnthropicClient(WrappedClient):
             {"temperature": call_args.temperature} if call_args.temperature is not None else {}
         )
 
-        # TODO: convert messages to anthropic format (images and system messages are handled differently than OpenAI, whose format we use)
-        converted_messages: List[MessageParam] = []
-        for message in messages:
-            pass
+        system, converted_messages = self._convert_messages(call_args.messages)
 
         return await self._client.messages.create(
             model=call_args.model,
             system=system,
-            messages=messages,  # pyright: ignore TODO: Convert the messages
+            messages=converted_messages,
             stream=call_args.stream,
             max_tokens=max_tokens,
             **maybe_temperature_kwargs,
@@ -268,9 +362,11 @@ class WrappedAnthropicClient(WrappedClient):
         try:
             yield
         except anthropic.APIConnectionError as e:
-            raise APIConnectionError(f"Anthropic Error: {e.message}") from e
+            raise APIConnectionError(f"Anthropic Connection Error: {e.message}") from e
         except anthropic.AuthenticationError as e:
-            raise AuthenticationError(f"Anthropic Error: {e.message}") from e
+            raise AuthenticationError(f"Anthropic Authentication Error: {e.message}") from e
+        except anthropic.APIStatusError as e:
+            raise APIError(f"Anthropic Status Error: {e.message}") from e
 
     # Anthropic doesn't give us a way to count tokens, so we just use OpenAI's token counting functions and multiply by a pre-determined multiplier
     class _FakeWrappedOpenAIClient(WrappedOpenAIClient):

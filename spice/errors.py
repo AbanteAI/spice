@@ -10,6 +10,10 @@ class APIConnectionError(SpiceError):
     pass
 
 
+class APIError(SpiceError):
+    pass
+
+
 class InvalidModelError(SpiceError):
     pass
 
@@ -19,4 +23,8 @@ class InvalidProviderError(SpiceError):
 
 
 class NoAPIKeyError(SpiceError):
+    pass
+
+
+class ImageError(SpiceError):
     pass

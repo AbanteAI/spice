@@ -277,6 +277,7 @@ class Spice:
 
         Args:
             messages: The list of messages given as context for the completion.
+            Will raise an ImageError if any invalid images are given.
 
             model: The model to use. Must be a text based model. If no model is given, will use the default text model
             the client was initialized with. If the model is unknown to Spice, a provider must be given.
@@ -323,6 +324,7 @@ class Spice:
 
         Args:
             messages: The list of messages given as context for the completion.
+            Will raise an ImageError if any invalid images are given.
 
             model: The model to use. Must be a text based model. If no model is given, will use the default text model
             the client was initialized with. If the model is unknown to Spice, a provider must be given.

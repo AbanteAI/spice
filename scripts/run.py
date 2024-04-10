@@ -1,7 +1,7 @@
 import asyncio
 import os
 import sys
-from typing import Dict, List
+from typing import List
 
 # Modify sys.path to ensure the script can run even when it's not part of the installed library.
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
