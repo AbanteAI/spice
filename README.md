@@ -1,6 +1,6 @@
 # Spice
 
-Spice is an light wrapper for AI SDKs like OpenAI's and Anthropic's. Spice simplifies LLM creations, embeddings, and transcriptions without obscuring any underlying parameters or processes. Spice also makes it ridiculously easy to switch between different providers, such as OpenAI and Anthropic, without having to modify your code.
+Spice is a light wrapper for AI SDKs like OpenAI's and Anthropic's. Spice simplifies LLM creations, embeddings, and transcriptions without obscuring any underlying parameters or processes. Spice also makes it ridiculously easy to switch between different providers, such as OpenAI and Anthropic, without having to modify your code.
 
 Spice also collects useful information such as tokens used, time spent, and cost for each call, making it easily available no matter which LLM provider is being used.
 

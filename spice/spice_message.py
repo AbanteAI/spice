@@ -65,7 +65,7 @@ def file_image_message(file_path: Path | str) -> ChatCompletionUserMessageParam:
 
 def http_image_message(url: str) -> ChatCompletionUserMessageParam:
     """Creates a user message with an image from the given url."""
-    if not (url.startswith("http://") or url.startswith("http://")):
+    if not (url.startswith("http://") or url.startswith("https://")):
         raise ImageError(f"Invalid image URL {url}: Must be http or https protocol.")
 
     return {"role": "user", "content": [{"type": "image_url", "image_url": {"url": url}}]}
