@@ -1,8 +1,8 @@
 # Spice
 
-Spice is an open source library for working with AI projects in Python. Spice simplifies LLM creations, embeddings, and transcriptions while using a single API for multiple providers, making switching between providers such as OpenAI and Anthropic incredibly simple.
+Spice is an light wrapper for AI SDKs like OpenAI's and Anthropic's. Spice simplifies LLM creations, embeddings, and transcriptions without obscuring any underlying parameters or processes. Spice also makes it ridiculously easy to switch between different providers, such as OpenAI and Anthropic, without having to modify your code.
 
-Spice also gathers useful information such as tokens used, time spent, and cost for each call, making it easily available no matter which LLM provider is being used.
+Spice also collects useful information such as tokens used, time spent, and cost for each call, making it easily available no matter which LLM provider is being used.
 
 ## Install
 
@@ -125,6 +125,26 @@ print(response.text)
 
 # Creating the model automatically registers it in Spice's model list, so listing the provider is no longer needed
 response = await client.get_response(messages=messages, model="first-gpt35")
+print(response.text)
+```
+
+### Vision models
+
+```python
+client = Spice()
+
+# Spice makes it easy to add images from files or the internet
+from spice.spice_message import file_image_message, user_message
+
+messages: List[SpiceMessage] = [user_message("What do you see?"), file_image_message("/path/to/image.png")]
+response = await client.get_response(messages, GPT_4_1106_VISION_PREVIEW)
+print(response.text)
+
+# Alternatively, you can use the SpiceMessages wrapper to easily create your prompts
+spice_messages: SpiceMessages = SpiceMessages()
+spice_messages.add_user_message("What do you see?")
+spice_messages.add_file_image_message("https://example.com/image.png")
+response = await client.get_response(spice_messages, CLAUDE_3_OPUS_20240229)
 print(response.text)
 ```
 

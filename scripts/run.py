@@ -104,6 +104,26 @@ async def azure_example():
     print(response.text)
 
 
+async def vision_example():
+    client = Spice()
+
+    # Spice makes it easy to add images from files or the internet
+    from spice import SpiceMessage, SpiceMessages
+    from spice.models import CLAUDE_3_OPUS_20240229, GPT_4_1106_VISION_PREVIEW
+    from spice.spice_message import file_image_message, user_message
+
+    messages: List[SpiceMessage] = [user_message("What do you see?"), file_image_message("~/.mentat/picture.png")]
+    response = await client.get_response(messages, GPT_4_1106_VISION_PREVIEW)
+    print(response.text)
+
+    # Alternatively, you can use the SpiceMessages wrapper to easily create your prompts
+    spice_messages: SpiceMessages = SpiceMessages()
+    spice_messages.add_user_message("What do you see?")
+    spice_messages.add_file_image_message("~/.mentat/picture.png")
+    response = await client.get_response(spice_messages, CLAUDE_3_OPUS_20240229)
+    print(response.text)
+
+
 async def embeddings_and_transcription_example():
     client = Spice()
     input_texts = ["Once upon a time...", "Cinderella"]
@@ -125,6 +145,8 @@ async def run_all_examples():
     await streaming_example()
     print("\n\nRunning multiple providers example:")
     await multiple_providers_example()
+    print("\n\nRunning vision example:")
+    await vision_example()
     print("\n\nRunning embeddings and transcription example:")
     await embeddings_and_transcription_example()
 
