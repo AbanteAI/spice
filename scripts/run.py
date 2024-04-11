@@ -136,7 +136,7 @@ async def embeddings_and_transcription_example():
 
     embeddings = await client.get_embeddings(input_texts, TEXT_EMBEDDING_ADA_002)
     transcription = await client.get_transcription("~/.mentat/logs/audio/talk_transcription.wav", WHISPER_1)
-    print(transcription)
+    print(transcription.text)
 
 
 async def run_all_examples():

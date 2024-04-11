@@ -162,5 +162,5 @@ from spice.models import TEXT_EMBEDDING_ADA_002, WHISPER_1
 
 embeddings = await client.get_embeddings(input_texts, TEXT_EMBEDDING_ADA_002)
 transcription = await client.get_transcription("/path/to/audio/file", WHISPER_1)
-print(transcription)
+print(transcription.text)
 ```

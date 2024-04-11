@@ -156,6 +156,36 @@ class StreamingSpiceResponse:
         return self.current_response()
 
 
+@dataclass
+class EmbeddingResponse:
+    embeddings: List[List[float]]
+    """The list of embeddings of the list of input texts."""
+
+    total_time: float
+    """How long it took for the response to be completed."""
+
+    input_tokens: int
+    """The number of input tokens given in this response."""
+
+    cost: Optional[float]
+    """The cost of this request in cents. Will be None if the cost of the model used is not known."""
+
+
+@dataclass
+class TranscriptionResponse:
+    text: str
+    """The transcription of the input audio."""
+
+    total_time: float
+    """How long it took for the response to be completed."""
+
+    input_length: float
+    """The length of the input audio in seconds."""
+
+    cost: Optional[float]
+    """The cost of this request in cents. Will be None if the cost of the model used is not known."""
+
+
 class Spice:
     """
     The Spice client. The majority of the time, only one Spice client should be initialized and used.
@@ -227,6 +257,15 @@ class Spice:
             if model.provider is None:
                 raise UnknownModelError("Provider is required when unknown models are used")
             return model.provider.get_client()
+
+    def _get_model(self, model: Model | str) -> Model:
+        if self._model_aliases is not None and model in self._model_aliases:
+            model = self._model_aliases[model]
+
+        if isinstance(model, str):
+            model = get_model_from_name(model)
+
+        return model
 
     def _get_text_model(self, model: Optional[Model | str]) -> TextModel:
         if model is None:
@@ -382,7 +421,7 @@ class Spice:
         input_texts: List[str],
         model: Optional[EmbeddingModel | str] = None,
         provider: Optional[Provider | str] = None,
-    ) -> List[List[float]]:
+    ) -> EmbeddingResponse:
         """
         Asynchronously retrieves embeddings for a list of text.
 
@@ -405,14 +444,18 @@ class Spice:
         if cost is not None:
             self._total_cost += cost
 
-        return await client.get_embeddings(input_texts, embedding_model.name)
+        start_time = timer()
+        embeddings = await client.get_embeddings(input_texts, embedding_model.name)
+        end_time = timer()
+
+        return EmbeddingResponse(embeddings, end_time - start_time, input_tokens, cost)
 
     def get_embeddings_sync(
         self,
         input_texts: List[str],
         model: Optional[EmbeddingModel | str] = None,
         provider: Optional[Provider | str] = None,
-    ) -> List[List[float]]:
+    ) -> EmbeddingResponse:
         """
         Synchronously retrieves embeddings for a list of text.
 
@@ -435,7 +478,11 @@ class Spice:
         if cost is not None:
             self._total_cost += cost
 
-        return client.get_embeddings_sync(input_texts, embedding_model.name)
+        start_time = timer()
+        embeddings = client.get_embeddings_sync(input_texts, embedding_model.name)
+        end_time = timer()
+
+        return EmbeddingResponse(embeddings, end_time - start_time, input_tokens, cost)
 
     def _get_transcription_model(self, model: Model | str) -> TranscriptionModel:
         if self._model_aliases is not None and model in self._model_aliases:
@@ -454,7 +501,7 @@ class Spice:
         audio_path: Path | str,
         model: TranscriptionModel | str,
         provider: Optional[Provider | str] = None,
-    ) -> str:
+    ) -> TranscriptionResponse:
         """
         Asynchronously retrieves embeddings for a list of text.
 
@@ -471,16 +518,61 @@ class Spice:
         transcription_model = self._get_transcription_model(model)
         client = self._get_client(transcription_model, provider)
 
+        start_time = timer()
         transcription, input_length = await client.get_transcription(
             Path(audio_path).expanduser().resolve(), transcription_model.name
         )
+        end_time = timer()
+
         cost = transcription_request_cost(transcription_model, input_length)
         if cost is not None:
             self._total_cost += cost
 
-        return transcription
+        return TranscriptionResponse(transcription, end_time - start_time, input_length, cost)
+
+    def count_tokens(
+        self, text: str, model: Model | str, provider: Optional[Provider | str] = None, is_message: bool = False
+    ) -> int:
+        """
+        Calculates the tokens in the given text. Will not be accurate for a chat completion prompt.
+        Use count_prompt_tokens to get the exact amount of tokens for a prompt.
+
+        Args:
+            text: The text to count the tokens of.
+
+            model: The model whose tokenizer will be used. Will raise UnknownModelError if the model is unknown and no provider is given.
+
+            provider: The provider to use. If specified, will override the model's default provider if known. Must be specified if an unknown model is used.
+
+            is_message: If true, will include the extra tokens that messages in chat completions add on. Most of the time, you'll want to keep this false.
+        """
+
+        model = self._get_model(model)
+        client = self._get_client(model, provider)
+
+        return client.count_string_tokens(text, model, is_message)
+
+    def count_prompt_tokens(
+        self, messages: Collection[SpiceMessage], model: Model | str, provider: Optional[Provider | str] = None
+    ) -> int:
+        """
+        Calculates the tokens that the messages would have if used in a chat completion.
+
+        Args:
+            messages: The messages to count the tokens of.
+
+            model: The model whose tokenizer will be used. Will raise UnknownModelError if the model is unknown and no provider is given.
+
+            provider: The provider to use. If specified, will override the model's default provider if known. Must be specified if an unknown model is used.
+        """
+
+        model = self._get_model(model)
+        client = self._get_client(model, provider)
+
+        return client.count_messages_tokens(messages, model)
 
     ### Prompts ###
+
     def store_prompt(self, prompt: str, name: str):
         """
         Stores a prompt under the given name
