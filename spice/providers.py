@@ -49,7 +49,7 @@ def get_azure_client(cache=[]):
     if key is None:
         raise NoAPIKeyError("AZURE_OPENAI_KEY not set")
     if endpoint is None:
-        raise SpiceError("AZURE_OPENAI_ENDPOINT not set")
+        raise NoAPIKeyError("AZURE_OPENAI_ENDPOINT not set")
 
     client = WrappedAzureClient(key, endpoint)
     cache.append(client)
