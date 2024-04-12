@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import dataclasses
 import glob
 import json
 from dataclasses import dataclass
+from datetime import datetime
 from json import JSONDecodeError
 from pathlib import Path
 from timeit import default_timer as timer
@@ -78,7 +80,7 @@ class StreamingSpiceResponse:
         call_args: SpiceCallArgs,
         client: WrappedClient,
         stream: AsyncIterator,
-        cost_callback: Callable[[float], None],
+        callback: Callable[[SpiceResponse], None],
     ):
         self._model = model
         self._call_args = call_args
@@ -90,8 +92,7 @@ class StreamingSpiceResponse:
         self._finished = False
         self._client = client
         self._stream = stream
-        self._cost_added = 0
-        self._cost_callback = cost_callback
+        self._callback = callback
 
     def __aiter__(self):
         return self
@@ -132,12 +133,7 @@ class StreamingSpiceResponse:
             output_tokens = self._client.count_string_tokens(full_output, self._model, full_message=False)
 
         cost = text_request_cost(self._model, input_tokens, output_tokens)
-        if cost is not None:
-            new_cost = cost - self._cost_added
-            self._cost_added = cost
-            self._cost_callback(new_cost)
-
-        return SpiceResponse(
+        response = SpiceResponse(
             self._call_args,
             full_output,
             self._end_time - self._start_time,
@@ -146,6 +142,9 @@ class StreamingSpiceResponse:
             self._finished,
             cost,
         )
+        self._callback(response)
+
+        return response
 
     async def complete_response(self) -> SpiceResponse:
         """
@@ -197,6 +196,7 @@ class Spice:
         default_text_model: Optional[TextModel | str] = None,
         default_embeddings_model: Optional[EmbeddingModel | str] = None,
         model_aliases: Optional[Dict[str, Model | str]] = None,
+        logging_dir: Optional[Path | str] = None,
     ):
         """
         Creates a new Spice client.
@@ -209,6 +209,8 @@ class Spice:
             Will raise an InvalidModelError if the model is not an embeddings model.
 
             model_aliases: A custom model name map.
+
+            logging_dir: If not None, will log all api calls to the given directory.
         """
 
         if isinstance(default_text_model, str):
@@ -232,6 +234,13 @@ class Spice:
 
         self._total_cost: float = 0
         self._prompts: Dict[str, str] = {}
+
+        if logging_dir is not None:
+            logging_dir = Path(logging_dir).expanduser().resolve()
+            timestamp = datetime.now().strftime("%m%d%y_%H%M%S")
+            self._log_file = logging_dir / f"spice_{timestamp}.json"
+        else:
+            self._log_file = None
 
     @property
     def total_cost(self) -> float:
@@ -307,6 +316,15 @@ class Spice:
             response_format=response_format,
         )
 
+    def _log_response(self, response: SpiceResponse):
+        if self._log_file is not None:
+            response_json = json.dumps(dataclasses.asdict(response))
+
+            # TODO: This unfortunately isn't a valid json file (since it has multiple objects) but it's the easiest way to keep all requests from one client together
+            with self._log_file.open("a") as file:
+                file.write(response_json)
+                file.write("\n")
+
     async def get_response(
         self,
         messages: Collection[SpiceMessage],
@@ -353,6 +371,7 @@ class Spice:
             self._total_cost += cost
 
         response = SpiceResponse(call_args, text, end_time - start_time, input_tokens, output_tokens, True, cost)
+        self._log_response(response)
         return response
 
     async def stream_response(
@@ -394,10 +413,13 @@ class Spice:
             stream = await client.get_chat_completion_or_stream(call_args)
         stream = cast(AsyncIterator, stream)
 
-        def cost_callback(cost):
-            self._total_cost += cost
+        def callback(response: SpiceResponse, cache: List[float] = [0]):
+            if response.cost is not None:
+                self._total_cost += response.cost - cache[0]
+                cache[0] = response.cost
+            self._log_response(response)
 
-        return StreamingSpiceResponse(text_model, call_args, client, stream, cost_callback)
+        return StreamingSpiceResponse(text_model, call_args, client, stream, callback)
 
     def _get_embedding_model(self, model: Optional[Model | str]) -> EmbeddingModel:
         if model is None:
