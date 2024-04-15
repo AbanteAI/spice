@@ -113,9 +113,16 @@ GPT_35_TURBO_16K_0613 = TextModel(
 CLAUDE_3_OPUS_20240229 = TextModel(
     "claude-3-opus-20240229", ANTHROPIC, input_cost=1500, output_cost=7500, context_length=200000
 )
+OPUS = CLAUDE_3_OPUS_20240229
+CLAUDE_3_SONNET_20240229 = TextModel(
+    "claude-3-sonnet-20240229", ANTHROPIC, input_cost=300, output_cost=1500, context_length=200000
+)
+SONNET = CLAUDE_3_SONNET_20240229
 CLAUDE_3_HAIKU_20240307 = TextModel(
     "claude-3-haiku-20240307", ANTHROPIC, input_cost=25, output_cost=125, context_length=200000
 )
+HAIKU = CLAUDE_3_HAIKU_20240307
+
 
 TEXT_EMBEDDING_3_LARGE = EmbeddingModel("text-embedding-3-large", OPEN_AI, input_cost=13, context_length=8191)
 TEXT_EMBEDDING_3_SMALL = EmbeddingModel("text-embedding-3-small", OPEN_AI, input_cost=2, context_length=8191)
