@@ -7,7 +7,7 @@ from typing import List
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from spice import Spice
-from spice.spice_message import SpiceMessage
+from spice.spice_message import SpiceMessage, assistant_message
 
 
 async def basic_example():
@@ -26,11 +26,12 @@ async def streaming_example():
     # You can set a default model for the client instead of passing it with each call
     client = Spice(default_text_model="claude-3-opus-20240229")
 
-    # You can easily load prompts from files, directories, or even urls
+    # You can easily load prompts from files, directories, or even urls.
     client.load_prompt("scripts/prompt.txt", name="my prompt")
 
+    # Spice can also automatically render Jinja templates.
     messages: List[SpiceMessage] = [
-        {"role": "system", "content": client.get_prompt(name="my prompt")},
+        {"role": "system", "content": client.get_rendered_prompt("my prompt", assistant_name="Ryan Reynolds")},
         {"role": "user", "content": "list 5 random words"},
     ]
     stream = await client.stream_response(messages=messages)
@@ -120,7 +121,7 @@ async def vision_example():
     print(response.text)
 
     # Alternatively, you can use the SpiceMessages wrapper to easily create your prompts
-    spice_messages: SpiceMessages = SpiceMessages()
+    spice_messages: SpiceMessages = SpiceMessages(client)
     spice_messages.add_user_message("What do you see?")
     spice_messages.add_file_image_message("~/.mentat/picture.png")
     response = await client.get_response(spice_messages, CLAUDE_3_OPUS_20240229)

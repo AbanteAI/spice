@@ -5,18 +5,19 @@ import glob
 import json
 from dataclasses import dataclass
 from datetime import datetime
-from json import JSONDecodeError
+from json import JSONDecodeError, encoder
 from pathlib import Path
 from timeit import default_timer as timer
-from typing import AsyncIterator, Callable, Collection, Dict, List, Literal, Optional, Sequence, cast
+from typing import Any, AsyncIterator, Callable, Collection, Dict, List, Literal, Optional, Sequence, cast
 
 import httpx
+from jinja2 import Environment
 from openai.types.chat.completion_create_params import ResponseFormat
 
 from spice.errors import InvalidModelError, UnknownModelError
 from spice.models import EmbeddingModel, Model, TextModel, TranscriptionModel, get_model_from_name
 from spice.providers import Provider, get_provider_from_name
-from spice.spice_message import SpiceMessage
+from spice.spice_message import MessagesEncoder, SpiceMessage, SpiceMessages, UsedPrompt
 from spice.utils import embeddings_request_cost, text_request_cost, transcription_request_cost
 from spice.wrapped_clients import WrappedClient
 
@@ -57,6 +58,9 @@ class SpiceResponse:
 
     cost: Optional[float]
     """The cost of this request in cents. May be inaccurate for incompleted streamed responses. Will be None if the cost of the model used is not known."""
+
+    used_prompts: Optional[Dict[str, UsedPrompt]]
+    """The prompts used in this request. Only available if SpiceMessages was used to create this response."""
 
     @property
     def total_tokens(self) -> int:
@@ -132,6 +136,11 @@ class StreamingSpiceResponse:
         if output_tokens is None:
             output_tokens = self._client.count_string_tokens(full_output, self._model, full_message=False)
 
+        if isinstance(self._call_args.messages, SpiceMessages):
+            used_prompts = self._call_args.messages.used_prompts
+        else:
+            used_prompts = None
+
         cost = text_request_cost(self._model, input_tokens, output_tokens)
         response = SpiceResponse(
             self._call_args,
@@ -141,6 +150,7 @@ class StreamingSpiceResponse:
             output_tokens,
             self._finished,
             cost,
+            used_prompts,
         )
         self._callback(response)
 
@@ -318,7 +328,7 @@ class Spice:
 
     def _log_response(self, response: SpiceResponse):
         if self._log_file is not None:
-            response_json = json.dumps(dataclasses.asdict(response))
+            response_json = json.dumps(dataclasses.asdict(response), cls=MessagesEncoder)
 
             # TODO: This unfortunately isn't a valid json file (since it has multiple objects) but it's the easiest way to keep all requests from one client together
             with self._log_file.open("a") as file:
@@ -370,7 +380,14 @@ class Spice:
         if cost is not None:
             self._total_cost += cost
 
-        response = SpiceResponse(call_args, text, end_time - start_time, input_tokens, output_tokens, True, cost)
+        if isinstance(call_args.messages, SpiceMessages):
+            used_prompts = call_args.messages.used_prompts
+        else:
+            used_prompts = None
+
+        response = SpiceResponse(
+            call_args, text, end_time - start_time, input_tokens, output_tokens, True, cost, used_prompts
+        )
         self._log_response(response)
         return response
 
@@ -619,6 +636,17 @@ class Spice:
         """
 
         return self._prompts[name]
+
+    def get_rendered_prompt(self, name: str, **context: Any) -> str:
+        """
+        Gets the prompt currently mapped to the given name and renders it using jinja.
+
+        Args:
+            name: The name of the prompt.
+
+            context: The jinja kwargs to render the prompt with.
+        """
+        return Environment().from_string(self._prompts[name]).render(context)
 
     def load_prompt(self, file_path: Path | str, name: Optional[str] = None):
         """
