@@ -46,11 +46,12 @@ print(response.text)
 # You can set a default model for the client instead of passing it with each call
 client = Spice(default_text_model="claude-3-opus-20240229")
 
-# You can easily load prompts from files, directories, or even urls
+# You can easily load prompts from files, directories, or even urls.
 client.load_prompt("prompt.txt", name="my prompt")
 
+# Spice can also automatically render Jinja templates.
 messages: List[SpiceMessage] = [
-    {"role": "system", "content": client.get_prompt(name="my prompt")},
+    {"role": "system", "content": client.get_rendered_prompt("my prompt", assistant_name="Ryan Reynolds")},
     {"role": "user", "content": "list 5 random words"},
 ]
 stream = await client.stream_response(messages=messages)
@@ -144,7 +145,7 @@ response = await client.get_response(messages, GPT_4_1106_VISION_PREVIEW)
 print(response.text)
 
 # Alternatively, you can use the SpiceMessages wrapper to easily create your prompts
-spice_messages: SpiceMessages = SpiceMessages()
+spice_messages: SpiceMessages = SpiceMessages(client)
 spice_messages.add_user_message("What do you see?")
 spice_messages.add_file_image_message("https://example.com/image.png")
 response = await client.get_response(spice_messages, CLAUDE_3_OPUS_20240229)
