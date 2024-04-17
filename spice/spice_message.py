@@ -77,17 +77,30 @@ def http_image_message(url: str) -> ChatCompletionUserMessageParam:
     return {"role": "user", "content": [{"type": "image_url", "image_url": {"url": url}}]}
 
 
-class UsedPrompt(TypedDict):
-    raw_prompt: str
-    rendered_prompt: str
-
-
 class MessagesEncoder(JSONEncoder):
     def default(self, o):
         if isinstance(o, SpiceMessages):
-            return o.data
+            new_data = []
+            for message in o.data:
+                # Shallow copy is ok since we won't be changing anything other than prompt_metadata
+                new_message = message.copy()
+                if hasattr(message, "prompt_metadata"):
+                    new_message["prompt_metadata"] = message.prompt_metadata  # pyright: ignore
+                new_data.append(new_message)
+            return new_data
         else:
             return super().default(o)
+
+
+class PromptMetadata(TypedDict):
+    name: str
+    content: str
+    context: Dict[str, Any]
+
+
+# Regular dicts can't have arbitrary attributes attached to them
+class _MetadataDict(dict):
+    prompt_metadata: PromptMetadata
 
 
 class SpiceMessages(UserList[SpiceMessage]):
@@ -97,7 +110,6 @@ class SpiceMessages(UserList[SpiceMessage]):
 
     def __init__(self, client: Spice, initlist: Optional[Iterable[SpiceMessage]] = None):
         self._client = client
-        self._prompts: Dict[str, UsedPrompt] = {}
         super().__init__(initlist)
 
     def add_user_message(self, content: str):
@@ -128,26 +140,25 @@ class SpiceMessages(UserList[SpiceMessage]):
         """Appends a user message with the given pre-loaded prompt using jinja to render the context."""
         prompt = self._client.get_prompt(name)
         rendered_prompt = self._client.get_rendered_prompt(name, **context)
-        self._prompts[name] = {"raw_prompt": prompt, "rendered_prompt": rendered_prompt}
-        self.add_user_message(rendered_prompt)
+        message = _MetadataDict(user_message(rendered_prompt))
+        message.prompt_metadata = {"name": name, "content": prompt, "context": context}
+        self.data.append(message)  # pyright: ignore
 
     def add_system_prompt(self, name: str, **context: Any):
         """Appends a system message with the given pre-loaded prompt using jinja to render the context."""
         prompt = self._client.get_prompt(name)
         rendered_prompt = self._client.get_rendered_prompt(name, **context)
-        self._prompts[name] = {"raw_prompt": prompt, "rendered_prompt": rendered_prompt}
-        self.add_system_message(rendered_prompt)
+        message = _MetadataDict(system_message(rendered_prompt))
+        message.prompt_metadata = {"name": name, "content": prompt, "context": context}
+        self.data.append(message)  # pyright: ignore
 
     def add_assistant_prompt(self, name: str, **context: Any):
         """Appends a assistant message with the given pre-loaded prompt using jinja to render the context."""
         prompt = self._client.get_prompt(name)
         rendered_prompt = self._client.get_rendered_prompt(name, **context)
-        self._prompts[name] = {"raw_prompt": prompt, "rendered_prompt": rendered_prompt}
-        self.add_assistant_message(rendered_prompt)
-
-    @property
-    def used_prompts(self):
-        return self._prompts
+        message = _MetadataDict(assistant_message(rendered_prompt))
+        message.prompt_metadata = {"name": name, "content": prompt, "context": context}
+        self.data.append(message)  # pyright: ignore
 
     # Because the constructor has the client as an argument we have to redefine these methods from UserList
     def __getitem__(self, i):  # pyright: ignore

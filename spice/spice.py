@@ -5,10 +5,10 @@ import glob
 import json
 from dataclasses import dataclass
 from datetime import datetime
-from json import JSONDecodeError, encoder
+from json import JSONDecodeError
 from pathlib import Path
 from timeit import default_timer as timer
-from typing import Any, AsyncIterator, Callable, Collection, Dict, List, Literal, Optional, Sequence, cast
+from typing import Any, AsyncIterator, Callable, Collection, Dict, List, Optional, cast
 
 import httpx
 from jinja2 import Environment
@@ -17,7 +17,7 @@ from openai.types.chat.completion_create_params import ResponseFormat
 from spice.errors import InvalidModelError, UnknownModelError
 from spice.models import EmbeddingModel, Model, TextModel, TranscriptionModel, get_model_from_name
 from spice.providers import Provider, get_provider_from_name
-from spice.spice_message import MessagesEncoder, SpiceMessage, SpiceMessages, UsedPrompt
+from spice.spice_message import MessagesEncoder, SpiceMessage, SpiceMessages
 from spice.utils import embeddings_request_cost, text_request_cost, transcription_request_cost
 from spice.wrapped_clients import WrappedClient
 
@@ -58,9 +58,6 @@ class SpiceResponse:
 
     cost: Optional[float]
     """The cost of this request in cents. May be inaccurate for incompleted streamed responses. Will be None if the cost of the model used is not known."""
-
-    used_prompts: Optional[Dict[str, UsedPrompt]]
-    """The prompts used in this request. Only available if SpiceMessages was used to create this response."""
 
     @property
     def total_tokens(self) -> int:
@@ -136,11 +133,6 @@ class StreamingSpiceResponse:
         if output_tokens is None:
             output_tokens = self._client.count_string_tokens(full_output, self._model, full_message=False)
 
-        if isinstance(self._call_args.messages, SpiceMessages):
-            used_prompts = self._call_args.messages.used_prompts
-        else:
-            used_prompts = None
-
         cost = text_request_cost(self._model, input_tokens, output_tokens)
         response = SpiceResponse(
             self._call_args,
@@ -150,7 +142,6 @@ class StreamingSpiceResponse:
             output_tokens,
             self._finished,
             cost,
-            used_prompts,
         )
         self._callback(response)
 
@@ -380,14 +371,7 @@ class Spice:
         if cost is not None:
             self._total_cost += cost
 
-        if isinstance(call_args.messages, SpiceMessages):
-            used_prompts = call_args.messages.used_prompts
-        else:
-            used_prompts = None
-
-        response = SpiceResponse(
-            call_args, text, end_time - start_time, input_tokens, output_tokens, True, cost, used_prompts
-        )
+        response = SpiceResponse(call_args, text, end_time - start_time, input_tokens, output_tokens, True, cost)
         self._log_response(response)
         return response
 
