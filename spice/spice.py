@@ -468,7 +468,8 @@ class Spice:
             self._total_cost += cost
 
         start_time = timer()
-        embeddings = await client.get_embeddings(input_texts, embedding_model.name)
+        with client.catch_and_convert_errors():
+            embeddings = await client.get_embeddings(input_texts, embedding_model.name)
         end_time = timer()
 
         return EmbeddingResponse(embeddings, end_time - start_time, input_tokens, cost)
@@ -502,7 +503,8 @@ class Spice:
             self._total_cost += cost
 
         start_time = timer()
-        embeddings = client.get_embeddings_sync(input_texts, embedding_model.name)
+        with client.catch_and_convert_errors():
+            embeddings = client.get_embeddings_sync(input_texts, embedding_model.name)
         end_time = timer()
 
         return EmbeddingResponse(embeddings, end_time - start_time, input_tokens, cost)
@@ -542,9 +544,10 @@ class Spice:
         client = self._get_client(transcription_model, provider)
 
         start_time = timer()
-        transcription, input_length = await client.get_transcription(
-            Path(audio_path).expanduser().resolve(), transcription_model.name
-        )
+        with client.catch_and_convert_errors():
+            transcription, input_length = await client.get_transcription(
+                Path(audio_path).expanduser().resolve(), transcription_model.name
+            )
         end_time = timer()
 
         cost = transcription_request_cost(transcription_model, input_length)
