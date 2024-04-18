@@ -71,7 +71,7 @@ def get_anthropic_client(cache=[]):
 
 load_dotenv()
 
-OPEN_AI = Provider("open_ai", get_openai_client)
+OPEN_AI = Provider("openai", get_openai_client)
 AZURE = Provider("azure", get_azure_client)
 ANTHROPIC = Provider("anthropic", get_anthropic_client)
 
