@@ -11,7 +11,6 @@ from timeit import default_timer as timer
 from typing import Any, AsyncIterator, Callable, Collection, Dict, List, Optional, cast
 
 import httpx
-import tomllib
 from jinja2 import Environment
 from openai.types.chat.completion_create_params import ResponseFormat
 
@@ -672,6 +671,7 @@ class Spice:
     def load_toml_prompts(self, file_path: Path | str, name: Optional[str] = None):
         """
         Loads prompts from a given toml file. The names of the prompts in the file will be prefixed by `{name}.`, so a file named prompts.toml containing `prompt1 = "Hi!"` would load the prompt as `prompts.prompt1`.
+        Only available for Python 3.11 (when tomllib was introduced)!
 
         Args:
             file_path: The path to the file. Must be a text encoded file containing valid TOML.
@@ -679,6 +679,8 @@ class Spice:
             name: The name of the prompt. If no name is given, the name will be the file name without the extension; i.e., the name of /path/to/prompt.toml will be `prompt`.
             If the name collides with the name of a previously loaded prompt, the previous prompt will be overwritten.
         """
+
+        import tomllib
 
         file_path = Path(file_path).expanduser().resolve()
 
@@ -694,7 +696,7 @@ class Spice:
 
     def load_dir(self, dir_path: Path | str):
         """
-        Loads a prompts from a given directory. Will recursively load all text encoded .txt and .toml files in the directory and its subdirectories.
+        Loads a prompts from a given directory. Will recursively load all text encoded .txt (and .toml if using Python 3.11) files in the directory and its subdirectories.
         Prompt names will be the filenames with their extension stripped with a `.` separating each subdirectory. For example, this directory would have these prompt names:
         If any name collides with the name of a previously loaded prompt, the previous prompt will be overwritten.
 
@@ -710,6 +712,13 @@ class Spice:
         Args:
             dir_path: The path to the directory.
         """
+
+        try:
+            import tomllib
+
+            use_toml = True
+        except ImportError:
+            use_toml = False
 
         dir_path = Path(dir_path).expanduser().resolve()
         if not dir_path.exists():
@@ -732,8 +741,9 @@ class Spice:
                 for i, part in enumerate(rel_path.parts)
             )
             if str(file_path).endswith(".toml"):
-                self._load_toml_dict(tomllib.loads(prompt), name)
-            else:
+                if use_toml:
+                    self._load_toml_dict(tomllib.loads(prompt), name)  # pyright: ignore[reportPossiblyUnboundVariable]
+            elif str(file_path).endswith(".txt"):
                 self.store_prompt(prompt, name)
 
     def load_url(self, url: str):
