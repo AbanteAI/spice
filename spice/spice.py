@@ -658,16 +658,52 @@ class Spice:
 
         self.store_prompt(prompt, name)
 
+    def _load_toml_dict(self, toml_dict: Dict[str, Any], name: str):
+        for k, v in toml_dict.items():
+            new_name = f"{name}.{k}"
+            if isinstance(v, str):
+                self.store_prompt(v, new_name)
+            elif isinstance(v, Dict):
+                self._load_toml_dict(v, new_name)
+            else:
+                raise ValueError("Invalid prompt TOML: TOML must only contain strings for prompts.")
+
+    def load_toml_prompts(self, file_path: Path | str, name: Optional[str] = None):
+        """
+        Loads prompts from a given toml file. The names of the prompts in the file will be prefixed by `{name}.`, so a file named prompts.toml containing `prompt1 = "Hi!"` would load the prompt as `prompts.prompt1`.
+        Only available for Python 3.11 (when tomllib was introduced)!
+
+        Args:
+            file_path: The path to the file. Must be a text encoded file containing valid TOML.
+
+            name: The name of the prompt. If no name is given, the name will be the file name without the extension; i.e., the name of /path/to/prompt.toml will be `prompt`.
+            If the name collides with the name of a previously loaded prompt, the previous prompt will be overwritten.
+        """
+
+        import tomllib
+
+        file_path = Path(file_path).expanduser().resolve()
+
+        try:
+            toml = file_path.read_text()
+        except (UnicodeDecodeError, FileNotFoundError):
+            raise
+
+        if name is None:
+            name = file_path.name.rsplit(".", 1)[0]
+
+        self._load_toml_dict(tomllib.loads(toml), name)
+
     def load_dir(self, dir_path: Path | str):
         """
-        Loads a prompts from a given directory. Will recursively load all text encoded .txt files in the directory and its subdirectories.
-        Prompt names will be the filenames with their .txt extension stripped with a `.` separating each subdirectory. For example, this directory would have these prompt names:
+        Loads a prompts from a given directory. Will recursively load all text encoded .txt (and .toml if using Python 3.11) files in the directory and its subdirectories.
+        Prompt names will be the filenames with their extension stripped with a `.` separating each subdirectory. For example, this directory would have these prompt names:
         If any name collides with the name of a previously loaded prompt, the previous prompt will be overwritten.
 
         ```
         dir_path/
             sub_dir/
-                prompt_1.txt        - sub_dir.prompt_1
+                prompt_1.toml        - sub_dir.prompt_1.{TOML prompt names}
                 not_a_prompt.jpg
             prompt_2.txt            - prompt_2
             another_prompt.txt      - another_prompt.txt
@@ -677,11 +713,20 @@ class Spice:
             dir_path: The path to the directory.
         """
 
+        try:
+            import tomllib
+
+            use_toml = True
+        except ImportError:
+            use_toml = False
+
         dir_path = Path(dir_path).expanduser().resolve()
         if not dir_path.exists():
             raise FileNotFoundError()
 
-        file_paths = glob.glob(f"{dir_path}/**/*.txt", recursive=True)
+        file_paths = glob.glob(f"{dir_path}/**/*.txt", recursive=True) + glob.glob(
+            f"{dir_path}/**/*.toml", recursive=True
+        )
         for file_path in file_paths:
             file_path = Path(file_path)
 
@@ -695,7 +740,11 @@ class Spice:
                 (part if i != len(rel_path.parts) - 1 else part.rsplit(".", 1)[0])
                 for i, part in enumerate(rel_path.parts)
             )
-            self.store_prompt(prompt, name)
+            if str(file_path).endswith(".toml"):
+                if use_toml:
+                    self._load_toml_dict(tomllib.loads(prompt), name)  # pyright: ignore[reportPossiblyUnboundVariable]
+            elif str(file_path).endswith(".txt"):
+                self.store_prompt(prompt, name)
 
     def load_url(self, url: str):
         """

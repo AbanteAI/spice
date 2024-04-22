@@ -1,0 +1,7 @@
+fullprompt = "I am fullprompt"
+
+[subprompt]
+subprompt1 = "I am subprompt 1"
+
+[subprompt.subagain]
+supersubprompt = "I am super subprompt"
