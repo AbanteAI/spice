@@ -321,6 +321,7 @@ class Spice:
         if self._log_file is not None:
             response_json = json.dumps(dataclasses.asdict(response), cls=MessagesEncoder)
 
+```
             # TODO: This unfortunately isn't a valid json file (since it has multiple objects) but it's the easiest way to keep all requests from one client together
             with self._log_file.open("a") as file:
                 file.write(response_json)
@@ -334,44 +335,32 @@ class Spice:
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
         response_format: Optional[ResponseFormat] = None,
+        validator: Optional[Callable[[str], bool]] = None,
+        retry_count: int = 0,
+        stream_callback: Optional[Callable[[str], None]] = None
     ) -> SpiceResponse:
         """
         Asynchronously retrieves a chat completion response.
-
-        Args:
-            messages: The list of messages given as context for the completion.
-            Will raise an ImageError if any invalid images are given.
-
-            model: The model to use. Must be a text based model. If no model is given, will use the default text model
-            the client was initialized with. If the model is unknown to Spice, a provider must be given.
-            Will raise an InvalidModelError if the model is not a text model.
-            Will raise an UnknownModelError if the model is unknown and no provider was given.
-
-            provider: The provider to use. If specified, will override the model's default provider if known. Must be specified if an unknown model is used.
-
-            temperature: The temperature to give the model.
-
-            max_tokens: The maximum tokens the model can output.
-
-            response_format: For valid models, will set the response format to 'text' or 'json'.
-            If the provider/model does not support response_format, this argument will be ignored.
         """
+        if stream_callback is not None:
+            return await self.stream_response(messages, model, provider, temperature, max_tokens, response_format, stream_callback)
 
         text_model = self._get_text_model(model)
         client = self._get_client(text_model, provider)
         call_args = self._fix_call_args(messages, text_model, False, temperature, max_tokens, response_format)
 
-        start_time = timer()
-        with client.catch_and_convert_errors():
-            chat_completion = await client.get_chat_completion_or_stream(call_args)
-        end_time = timer()
-        text, input_tokens, output_tokens = client.extract_text_and_tokens(chat_completion)
+        validation_attempts = 0
+        while validation_attempts <= retry_count:
+            text, input_tokens, output_tokens = await self._attempt_response_retrieval(text_model, call_args, client)
+            if validator is None or validator(text):
+                break
+            validation_attempts += 1
 
         cost = text_request_cost(text_model, input_tokens, output_tokens)
         if cost is not None:
             self._total_cost += cost
 
-        response = SpiceResponse(call_args, text, end_time - start_time, input_tokens, output_tokens, True, cost)
+        response = SpiceResponse(call_args, text, total_time, input_tokens, output_tokens, True, cost)
         self._log_response(response)
         return response
 
@@ -380,6 +369,7 @@ class Spice:
         messages: Collection[SpiceMessage],
         model: Optional[TextModel | str] = None,
         provider: Optional[Provider | str] = None,
+```
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
         response_format: Optional[ResponseFormat] = None,
