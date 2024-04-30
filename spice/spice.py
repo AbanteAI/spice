@@ -3,6 +3,7 @@ from __future__ import annotations
 import dataclasses
 import glob
 import json
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
 from json import JSONDecodeError
@@ -17,7 +18,7 @@ from openai.types.chat.completion_create_params import ResponseFormat
 from spice.errors import InvalidModelError, UnknownModelError
 from spice.models import EmbeddingModel, Model, TextModel, TranscriptionModel, get_model_from_name
 from spice.providers import Provider, get_provider_from_name
-from spice.spice_message import MessagesEncoder, SpiceMessage, SpiceMessages
+from spice.spice_message import MessagesEncoder, SpiceMessage
 from spice.utils import embeddings_request_cost, text_request_cost, transcription_request_cost
 from spice.wrapped_clients import WrappedClient
 
@@ -236,12 +237,33 @@ class Spice:
         self._total_cost: float = 0
         self._prompts: Dict[str, str] = {}
 
-        if logging_dir is not None:
-            logging_dir = Path(logging_dir).expanduser().resolve()
-            timestamp = datetime.now().strftime("%m%d%y_%H%M%S")
-            self._log_file = logging_dir / f"spice_{timestamp}.json"
-        else:
-            self._log_file = None
+        self.logging_dir = logging_dir
+        self.new_run("spice")
+
+    def new_run(self, name: str):
+        """
+        Create a new run. All llm calls will be logged in a folder with the run name and a timestamp.
+        """
+        timestamp = datetime.now().strftime("%m%d%y_%H%M%S")
+        self._cur_run = f"{name}_{timestamp}"
+        self._cur_logged_names = defaultdict(int)
+
+    def _log_response(self, response: SpiceResponse, name: Optional[str] = None):
+        if self.logging_dir is not None:
+            response_dict = dataclasses.asdict(response)
+            if name is None:
+                name = "spice"
+            if self._cur_logged_names[name] != 0:
+                name += f"_{self._cur_logged_names[name]}"
+            self._cur_logged_names[name] += 1
+            name += ".json"
+
+            response_json = json.dumps(response_dict, cls=MessagesEncoder)
+
+            logging_dir = Path(self.logging_dir).expanduser() / self._cur_run
+            logging_dir.mkdir(exist_ok=True, parents=True)
+            with (logging_dir / name).open("w") as file:
+                file.write(f"{response_json}\n")
 
     @property
     def total_cost(self) -> float:
@@ -317,15 +339,6 @@ class Spice:
             response_format=response_format,
         )
 
-    def _log_response(self, response: SpiceResponse):
-        if self._log_file is not None:
-            response_json = json.dumps(dataclasses.asdict(response), cls=MessagesEncoder)
-
-            # TODO: This unfortunately isn't a valid json file (since it has multiple objects) but it's the easiest way to keep all requests from one client together
-            with self._log_file.open("a") as file:
-                file.write(response_json)
-                file.write("\n")
-
     async def get_response(
         self,
         messages: Collection[SpiceMessage],
@@ -334,6 +347,7 @@ class Spice:
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
         response_format: Optional[ResponseFormat] = None,
+        name: Optional[str] = None,
     ) -> SpiceResponse:
         """
         Asynchronously retrieves a chat completion response.
@@ -355,6 +369,8 @@ class Spice:
 
             response_format: For valid models, will set the response format to 'text' or 'json'.
             If the provider/model does not support response_format, this argument will be ignored.
+
+            name: If given, will be given this name when logged.
         """
 
         text_model = self._get_text_model(model)
@@ -372,7 +388,7 @@ class Spice:
             self._total_cost += cost
 
         response = SpiceResponse(call_args, text, end_time - start_time, input_tokens, output_tokens, True, cost)
-        self._log_response(response)
+        self._log_response(response, name)
         return response
 
     async def stream_response(
@@ -383,6 +399,7 @@ class Spice:
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
         response_format: Optional[ResponseFormat] = None,
+        name: Optional[str] = None,
     ) -> StreamingSpiceResponse:
         """
         Asynchronously retrieves a chat completion stream that can be iterated over asynchronously.
@@ -404,6 +421,8 @@ class Spice:
 
             response_format: For valid models, will set the response format to 'text' or 'json'.
             If the provider/model does not support response_format, this argument will be ignored.
+
+            name: If given, will be given this name when logged.
         """
 
         text_model = self._get_text_model(model)
@@ -418,7 +437,8 @@ class Spice:
             if response.cost is not None:
                 self._total_cost += response.cost - cache[0]
                 cache[0] = response.cost
-            self._log_response(response)
+            # TODO: Do we want to log multiple times? Our old log might be incomplete, which is why this is still in, but probably not necessary.
+            self._log_response(response, name)
 
         return StreamingSpiceResponse(text_model, call_args, client, stream, callback)
 
@@ -746,9 +766,9 @@ class Spice:
             elif str(file_path).endswith(".txt"):
                 self.store_prompt(prompt, name)
 
-    def load_url(self, url: str):
+    def load_url(self, url: str, name: str):
         """
-        Loads a prompt from the given url. Will send a GET request to the url and expects a response with the following schema:
+        Loads a prompt from the given url. Will send a GET request to the url and expects a response with either the following schema or a toml file (.toml only available for Python 3.11 and onwards):
         ```
         {
             "prompts": [
@@ -759,21 +779,32 @@ class Spice:
             ]
         }
         ```
+        TOML will only be loaded if the url points to a .toml file.
+        All prompt names will be prefixed with `name.`
         If any name collides with the name of a previously loaded prompt, the previous prompt will be overwritten.
 
         Args:
             url: The url.
+
+            name: The name to prefix the prompts with.
         """
 
-        raw_json = httpx.get(url).content.decode("utf-8")
-        try:
-            prompts = json.loads(raw_json)
-        except JSONDecodeError:
-            raise
+        response = httpx.get(url).content.decode("utf-8")
+        if url.endswith(".toml"):
+            import tomllib
 
-        try:
+            try:
+                prompts = tomllib.loads(response)
+            except tomllib.TOMLDecodeError:
+                raise
+            self._load_toml_dict(prompts, name)
+
+        else:
+            try:
+                prompts = json.loads(response)
+            except JSONDecodeError:
+                raise
+
             for prompt_object in prompts["prompts"]:
                 name, prompt = prompt_object["name"], prompt_object["prompt"]
                 self.store_prompt(prompt, name)
-        except:
-            raise
