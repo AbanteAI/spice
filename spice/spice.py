@@ -382,9 +382,12 @@ class Spice:
             If the provider/model does not support response_format, this argument will be ignored.
 
             name: If given, will be given this name when logged.
+
             validator: If given, will be called with the text of the response. If it returns False, the response will be discarded and another attempt will be made.
+
             streaming_callback: If given, will be called with the text of the response as it is received.
-            retries: The number of times to retry getting a valid response. If 0, will not retry.
+
+            retries: The number of times to retry getting a valid response. If 0, will not retry. If after all retries no valid response is received, will raise a ValueError.
         """
         start_time = timer()
         cost = 0
