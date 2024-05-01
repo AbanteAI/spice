@@ -89,7 +89,7 @@ class WrappedOpenAIClient(WrappedClient):
 
         return await self._client.chat.completions.create(
             model=call_args.model,
-            messages=call_args.messages,
+            messages=list(call_args.messages),
             stream=call_args.stream,
             temperature=call_args.temperature,
             max_tokens=max_tokens,
@@ -210,7 +210,9 @@ class WrappedAnthropicClient(WrappedClient):
     def __init__(self, key):
         self._client = AsyncAnthropic(api_key=key)
 
-    def _convert_messages(self, messages: Collection[SpiceMessage]) -> Tuple[str, List[MessageParam]]:
+    def _convert_messages(
+        self, messages: Collection[SpiceMessage], add_json_brace: bool
+    ) -> Tuple[str, List[MessageParam]]:
         # Anthropic handles both images and system messages different from OpenAI, only allows alternating user / assistant messages,
         # and doesn't support tools / function calling (still in beta, and doesn't support streaming)
 
@@ -311,12 +313,19 @@ class WrappedAnthropicClient(WrappedClient):
                     # Deprecated, nobody should use this
                     pass
 
+        if add_json_brace and converted_messages:
+            if converted_messages[-1]["role"] == "assistant" and not converted_messages[-1]["content"]:
+                converted_messages[-1]["content"] += "{"  # pyright: ignore
+            elif converted_messages[-1]["role"] == "user":
+                converted_messages.append({"role": "assistant", "content": "{"})
+
         return system, converted_messages
 
     @override
     async def get_chat_completion_or_stream(self, call_args: SpiceCallArgs):
-        if call_args.response_format is not None and call_args.response_format.get("type", "text") != "text":
-            raise InvalidModelError("response_format is not supported by Anthropic")
+        add_json_brace = (
+            call_args.response_format is not None and call_args.response_format.get("type", "text") == "json_object"
+        )
 
         # max_tokens is required by anthropic api
         if call_args.max_tokens is None:
@@ -329,7 +338,7 @@ class WrappedAnthropicClient(WrappedClient):
             {"temperature": call_args.temperature} if call_args.temperature is not None else {}
         )
 
-        system, converted_messages = self._convert_messages(call_args.messages)
+        system, converted_messages = self._convert_messages(call_args.messages, add_json_brace)
 
         return await self._client.messages.create(
             model=call_args.model,
