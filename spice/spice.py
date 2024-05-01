@@ -17,8 +17,8 @@ from openai.types.chat.completion_create_params import ResponseFormat
 from spice.errors import InvalidModelError, UnknownModelError
 from spice.models import EmbeddingModel, Model, TextModel, TranscriptionModel, get_model_from_name
 from spice.providers import Provider, get_provider_from_name
-from spice.spice_message import MessagesEncoder, SpiceMessage, SpiceMessages
-from spice.utils import embeddings_request_cost, text_request_cost, transcription_request_cost
+from spice.spice_message import MessagesEncoder, SpiceMessage
+from spice.utils import embeddings_request_cost, print_stream, text_request_cost, transcription_request_cost
 from spice.wrapped_clients import WrappedClient
 
 
@@ -59,6 +59,9 @@ class SpiceResponse:
     cost: Optional[float]
     """The cost of this request in cents. May be inaccurate for incompleted streamed responses. Will be None if the cost of the model used is not known."""
 
+    retries: int = 0
+    """The number of retries that were made to get this response. Will be 0 if no retries were made."""
+
     @property
     def total_tokens(self) -> int:
         """The total tokens, input and output, in this response."""
@@ -81,7 +84,8 @@ class StreamingSpiceResponse:
         call_args: SpiceCallArgs,
         client: WrappedClient,
         stream: AsyncIterator,
-        callback: Callable[[SpiceResponse], None],
+        callback: Optional[Callable[[SpiceResponse], None]] = None,
+        streaming_callback: Optional[Callable[[str], None]] = None,
     ):
         self._model = model
         self._call_args = call_args
@@ -94,6 +98,7 @@ class StreamingSpiceResponse:
         self._client = client
         self._stream = stream
         self._callback = callback
+        self._streaming_callback = streaming_callback
 
     def __aiter__(self):
         return self
@@ -109,6 +114,8 @@ class StreamingSpiceResponse:
                         self._input_tokens = input_tokens
                     if output_tokens is not None:
                         self._output_tokens = output_tokens
+                if self._streaming_callback is not None:
+                    self._streaming_callback(content)
                 self._text.append(content)
                 return content
             except StopAsyncIteration:
@@ -143,7 +150,8 @@ class StreamingSpiceResponse:
             self._finished,
             cost,
         )
-        self._callback(response)
+        if self._callback is not None:
+            self._callback(response)
 
         return response
 
@@ -334,6 +342,9 @@ class Spice:
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
         response_format: Optional[ResponseFormat] = None,
+        validator: Optional[Callable[[str], bool]] = None,
+        streaming_callback: Optional[Callable[[str], None]] = None,
+        retries: int = 0,
     ) -> SpiceResponse:
         """
         Asynchronously retrieves a chat completion response.
@@ -356,24 +367,47 @@ class Spice:
             response_format: For valid models, will set the response format to 'text' or 'json'.
             If the provider/model does not support response_format, this argument will be ignored.
         """
-
-        text_model = self._get_text_model(model)
-        client = self._get_client(text_model, provider)
-        call_args = self._fix_call_args(messages, text_model, False, temperature, max_tokens, response_format)
-
         start_time = timer()
-        with client.catch_and_convert_errors():
-            chat_completion = await client.get_chat_completion_or_stream(call_args)
-        end_time = timer()
-        text, input_tokens, output_tokens = client.extract_text_and_tokens(chat_completion)
+        cost = 0
+        for i in range(retries + 1):
+            text_model = self._get_text_model(model)
+            client = self._get_client(text_model, provider)
+            call_args = self._fix_call_args(
+                messages, text_model, streaming_callback is not None, temperature, max_tokens, response_format
+            )
 
-        cost = text_request_cost(text_model, input_tokens, output_tokens)
-        if cost is not None:
-            self._total_cost += cost
+            with client.catch_and_convert_errors():
+                if streaming_callback is not None:
+                    stream = await client.get_chat_completion_or_stream(call_args)
+                    stream = cast(AsyncIterator, stream)
+                    streaming_spice_response = StreamingSpiceResponse(
+                        text_model, call_args, client, stream, None, streaming_callback
+                    )
+                    chat_completion = await streaming_spice_response.complete_response()
+                    text, input_tokens, output_tokens = (
+                        chat_completion.text,
+                        chat_completion.input_tokens,
+                        chat_completion.output_tokens,
+                    )
 
-        response = SpiceResponse(call_args, text, end_time - start_time, input_tokens, output_tokens, True, cost)
-        self._log_response(response)
-        return response
+                else:
+                    chat_completion = await client.get_chat_completion_or_stream(call_args)
+                    text, input_tokens, output_tokens = client.extract_text_and_tokens(chat_completion)
+
+            completion_cost = text_request_cost(text_model, input_tokens, output_tokens)
+            if completion_cost is not None:
+                cost += completion_cost
+                self._total_cost += completion_cost
+
+            if validator is not None and not validator(text):
+                continue
+            end_time = timer()
+            response = SpiceResponse(
+                call_args, text, end_time - start_time, input_tokens, output_tokens, True, cost, retries=i
+            )
+            self._log_response(response)
+            return response
+        raise ValueError("Failed to get a valid response after all retries")
 
     async def stream_response(
         self,
@@ -383,6 +417,7 @@ class Spice:
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
         response_format: Optional[ResponseFormat] = None,
+        streaming_callback: Optional[Callable[[str], None]] = None,
     ) -> StreamingSpiceResponse:
         """
         Asynchronously retrieves a chat completion stream that can be iterated over asynchronously.
@@ -420,7 +455,7 @@ class Spice:
                 cache[0] = response.cost
             self._log_response(response)
 
-        return StreamingSpiceResponse(text_model, call_args, client, stream, callback)
+        return StreamingSpiceResponse(text_model, call_args, client, stream, callback, streaming_callback)
 
     def _get_embedding_model(self, model: Optional[Model | str]) -> EmbeddingModel:
         if model is None:

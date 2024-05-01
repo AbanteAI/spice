@@ -6,7 +6,7 @@ from typing import Callable, List
 
 from dotenv import load_dotenv
 
-from spice.errors import InvalidProviderError, NoAPIKeyError, SpiceError
+from spice.errors import InvalidProviderError, NoAPIKeyError
 from spice.wrapped_clients import WrappedAnthropicClient, WrappedAzureClient, WrappedClient, WrappedOpenAIClient
 
 # Used to fetch a provider by name

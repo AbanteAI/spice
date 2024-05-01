@@ -6,7 +6,7 @@ import mimetypes
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, AsyncIterator, Collection, ContextManager, Dict, List, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Any, AsyncIterator, Collection, ContextManager, Dict, List, Optional, Tuple
 
 import anthropic
 import httpx
@@ -19,7 +19,7 @@ from openai.types.chat import ChatCompletion, ChatCompletionChunk
 from PIL import Image
 from typing_extensions import override
 
-from spice.errors import APIConnectionError, APIError, AuthenticationError, ImageError, InvalidModelError, SpiceError
+from spice.errors import APIConnectionError, APIError, AuthenticationError, ImageError, InvalidModelError
 from spice.spice_message import VALID_MIMETYPES, SpiceMessage
 
 if TYPE_CHECKING:

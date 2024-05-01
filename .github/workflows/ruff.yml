@@ -21,3 +21,5 @@ jobs:
         run: ruff format --check .
       - name: pyright
         run: pyright
+      - name: pytest
+        run: pytest
