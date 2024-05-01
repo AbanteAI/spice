@@ -12,7 +12,7 @@ from timeit import default_timer as timer
 from typing import Any, AsyncIterator, Callable, Collection, Dict, List, Optional, cast
 
 import httpx
-from jinja2 import Environment
+from jinja2 import DictLoader, Environment
 from openai.types.chat.completion_create_params import ResponseFormat
 
 from spice.errors import InvalidModelError, UnknownModelError
@@ -245,7 +245,7 @@ class Spice:
         self._total_cost: float = 0
         self._prompts: Dict[str, str] = {}
 
-        self.logging_dir = logging_dir
+        self.logging_dir = None if logging_dir is None else Path(logging_dir).expanduser()
         self.new_run("spice")
 
     def new_run(self, name: str):
@@ -255,20 +255,28 @@ class Spice:
         timestamp = datetime.now().strftime("%m%d%y_%H%M%S")
         self._cur_run = f"{name}_{timestamp}"
         self._cur_logged_names = defaultdict(int)
+        self._log_prompts()
+
+    def _log_prompts(self):
+        if self.logging_dir is not None:
+            logging_dir = self.logging_dir / self._cur_run
+            logging_dir.mkdir(exist_ok=True, parents=True)
+            with open(logging_dir / "prompts.json", "w") as file:
+                json.dump(self._prompts, file)
 
     def _log_response(self, response: SpiceResponse, name: Optional[str] = None):
         if self.logging_dir is not None:
             response_dict = dataclasses.asdict(response)
             if name is None:
                 name = "spice"
-            if self._cur_logged_names[name] != 0:
+            if self._cur_logged_names[name] != 0 or name == "prompts":
                 name += f"_{self._cur_logged_names[name]}"
             self._cur_logged_names[name] += 1
             name += ".json"
 
             response_json = json.dumps(response_dict, cls=MessagesEncoder)
 
-            logging_dir = Path(self.logging_dir).expanduser() / self._cur_run
+            logging_dir = self.logging_dir / self._cur_run
             logging_dir.mkdir(exist_ok=True, parents=True)
             with (logging_dir / name).open("w") as file:
                 file.write(f"{response_json}\n")
@@ -660,6 +668,8 @@ class Spice:
 
     ### Prompts ###
 
+    _prompts_dirty = False
+
     def store_prompt(self, prompt: str, name: str):
         """
         Stores a prompt under the given name
@@ -674,6 +684,7 @@ class Spice:
             # Overwriting prompt; should we do anything?
             pass
         self._prompts[name] = prompt
+        self._prompts_dirty = True
 
     def get_prompt(self, name: str) -> str:
         """
@@ -682,6 +693,10 @@ class Spice:
         Args:
             name: The name of the prompt.
         """
+
+        if self._prompts_dirty:
+            self._log_prompts()
+            self._prompts_dirty = False
 
         return self._prompts[name]
 
@@ -694,7 +709,12 @@ class Spice:
 
             context: The jinja kwargs to render the prompt with.
         """
-        return Environment().from_string(self._prompts[name]).render(context)
+
+        if self._prompts_dirty:
+            self._log_prompts()
+            self._prompts_dirty = False
+
+        return Environment(loader=DictLoader(self._prompts)).get_template(name).render(context)
 
     def load_prompt(self, file_path: Path | str, name: Optional[str] = None):
         """
