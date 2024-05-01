@@ -22,3 +22,7 @@ def transcription_request_cost(model: TranscriptionModel, input_length: float) -
         return (model.input_cost * input_length) / 100
     else:
         return None
+
+
+def print_stream(text: str) -> None:
+    print(text, end="", flush=True)
