@@ -267,18 +267,18 @@ class Spice:
     def _log_response(self, response: SpiceResponse, name: Optional[str] = None):
         if self.logging_dir is not None:
             response_dict = dataclasses.asdict(response)
-            if name is None:
-                name = "spice"
-            if self._cur_logged_names[name] != 0 or name == "prompts":
-                name += f"_{self._cur_logged_names[name]}"
-            self._cur_logged_names[name] += 1
-            name += ".json"
+            base_name = "spice" if name is None else name
+            if base_name == "prompts":
+                full_name = "prompts.json"
+            else:
+                full_name = f"{base_name}_{self._cur_logged_names[base_name]}.json"
+                self._cur_logged_names[base_name] += 1
 
             response_json = json.dumps(response_dict, cls=MessagesEncoder)
 
             logging_dir = self.logging_dir / self._cur_run
             logging_dir.mkdir(exist_ok=True, parents=True)
-            with (logging_dir / name).open("w") as file:
+            with (logging_dir / full_name).open("w") as file:
                 file.write(f"{response_json}\n")
 
     @property
