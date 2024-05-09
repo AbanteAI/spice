@@ -207,6 +207,7 @@ class Spice:
         default_embeddings_model: Optional[EmbeddingModel | str] = None,
         model_aliases: Optional[Dict[str, Model | str]] = None,
         logging_dir: Optional[Path | str] = None,
+        logging_callback: Optional[Callable[[SpiceResponse, str, str], None]] = None,
     ):
         """
         Creates a new Spice client.
@@ -221,6 +222,8 @@ class Spice:
             model_aliases: A custom model name map.
 
             logging_dir: If not None, will log all api calls to the given directory.
+
+            logging_callback: If not None, will call the given function with the SpiceResponse, the name of the run, and the name of the call after every call finishes.
         """
 
         if isinstance(default_text_model, str):
@@ -246,6 +249,7 @@ class Spice:
         self._prompts: Dict[str, str] = {}
 
         self.logging_dir = None if logging_dir is None else Path(logging_dir).expanduser()
+        self.logging_callback = logging_callback
         self.new_run("spice")
 
     def new_run(self, name: str):
@@ -265,21 +269,20 @@ class Spice:
                 json.dump(self._prompts, file)
 
     def _log_response(self, response: SpiceResponse, name: Optional[str] = None):
-        if self.logging_dir is not None:
-            response_dict = dataclasses.asdict(response)
-            base_name = "spice" if name is None else name
-            if base_name == "prompts":
-                full_name = "prompts.json"
-            else:
-                full_name = f"{base_name}_{self._cur_logged_names[base_name]}.json"
-                self._cur_logged_names[base_name] += 1
+        base_name = "spice" if name is None else name
 
+        if self.logging_dir is not None:
+            full_name = f"{base_name}_{self._cur_logged_names[base_name]}.json"
+            self._cur_logged_names[base_name] += 1
+            response_dict = dataclasses.asdict(response)
             response_json = json.dumps(response_dict, cls=MessagesEncoder)
 
             logging_dir = self.logging_dir / self._cur_run
             logging_dir.mkdir(exist_ok=True, parents=True)
             with (logging_dir / full_name).open("w") as file:
                 file.write(f"{response_json}\n")
+        if self.logging_callback is not None:
+            self.logging_callback(response, self._cur_run, base_name)
 
     @property
     def total_cost(self) -> float:
