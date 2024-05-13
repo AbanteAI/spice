@@ -17,7 +17,7 @@ async def basic_example():
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "list 5 random words"},
     ]
-    response = await client.get_response(messages=messages, model="gpt-4-0125-preview")
+    response = await client.get_response(messages=messages, model="gpt-4o")
 
     print(response.text)
 
