@@ -19,7 +19,7 @@ from spice.errors import InvalidModelError, UnknownModelError
 from spice.models import EmbeddingModel, Model, TextModel, TranscriptionModel, get_model_from_name
 from spice.providers import Provider, get_provider_from_name
 from spice.spice_message import MessagesEncoder, SpiceMessage
-from spice.utils import embeddings_request_cost, print_stream, text_request_cost, transcription_request_cost
+from spice.utils import embeddings_request_cost, text_request_cost, transcription_request_cost
 from spice.wrapped_clients import WrappedClient
 
 
@@ -59,9 +59,6 @@ class SpiceResponse:
 
     cost: Optional[float]
     """The cost of this request in cents. May be inaccurate for incompleted streamed responses. Will be None if the cost of the model used is not known."""
-
-    retries: int = 0
-    """The number of retries that were made to get this response. Will be 0 if no retries were made."""
 
     @property
     def total_tokens(self) -> int:
@@ -400,9 +397,9 @@ class Spice:
 
             retries: The number of times to retry getting a valid response. If 0, will not retry. If after all retries no valid response is received, will raise a ValueError.
         """
-        start_time = timer()
         cost = 0
         for i in range(retries + 1):
+            start_time = timer()
             text_model = self._get_text_model(model)
             client = self._get_client(text_model, provider)
             call_args = self._fix_call_args(
@@ -432,14 +429,17 @@ class Spice:
                 cost += completion_cost
                 self._total_cost += completion_cost
 
-            if validator is not None and not validator(text):
-                continue
             end_time = timer()
-            response = SpiceResponse(
-                call_args, text, end_time - start_time, input_tokens, output_tokens, True, cost, retries=i
-            )
-            self._log_response(response, name)
-            return response
+            response = SpiceResponse(call_args, text, end_time - start_time, input_tokens, output_tokens, True, cost)
+            if validator is not None and not validator(text):
+                if name:
+                    retry_name = f"{name}-retry-{i}-fail"
+                else:
+                    retry_name = f"retry-{i}-fail"
+                self._log_response(response, retry_name)
+            else:
+                self._log_response(response, name)
+                return response
         raise ValueError("Failed to get a valid response after all retries")
 
     async def stream_response(

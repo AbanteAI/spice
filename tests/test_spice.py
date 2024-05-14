@@ -31,5 +31,4 @@ async def test_get_response():
     )
 
     assert response.text == "test"
-    assert response.retries == 1
     assert cache == "Hello, world!test"
