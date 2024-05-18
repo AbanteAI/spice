@@ -205,6 +205,7 @@ class Spice:
         model_aliases: Optional[Dict[str, Model | str]] = None,
         logging_dir: Optional[Path | str] = None,
         logging_callback: Optional[Callable[[SpiceResponse, str, str], None]] = None,
+        default_temperature: Optional[float] = None,
     ):
         """
         Creates a new Spice client.
@@ -221,6 +222,8 @@ class Spice:
             logging_dir: If not None, will log all api calls to the given directory.
 
             logging_callback: If not None, will call the given function with the SpiceResponse, the name of the run, and the name of the call after every call finishes.
+
+            default_temperature: The default temperature to use for chat completions if no other temperature is given.
         """
 
         if isinstance(default_text_model, str):
@@ -238,6 +241,7 @@ class Spice:
         if embeddings_model and not isinstance(embeddings_model, EmbeddingModel):
             raise InvalidModelError("Default embeddings model must be an embeddings model")
         self._default_embeddings_model = embeddings_model
+        self._default_temperature = default_temperature
 
         # TODO: Should we validate model aliases?
         self._model_aliases = model_aliases
@@ -350,7 +354,7 @@ class Spice:
             model=model.name,
             messages=messages,
             stream=stream,
-            temperature=temperature,
+            temperature=self._default_temperature if temperature is None else temperature,
             max_tokens=max_tokens,
             response_format=response_format,
         )
