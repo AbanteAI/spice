@@ -205,6 +205,7 @@ class Spice:
         model_aliases: Optional[Dict[str, Model | str]] = None,
         logging_dir: Optional[Path | str] = None,
         logging_callback: Optional[Callable[[SpiceResponse, str, str], None]] = None,
+        default_temperature: Optional[float] = None,
     ):
         """
         Creates a new Spice client.
@@ -238,6 +239,7 @@ class Spice:
         if embeddings_model and not isinstance(embeddings_model, EmbeddingModel):
             raise InvalidModelError("Default embeddings model must be an embeddings model")
         self._default_embeddings_model = embeddings_model
+        self._default_temperature = default_temperature
 
         # TODO: Should we validate model aliases?
         self._model_aliases = model_aliases
@@ -350,7 +352,7 @@ class Spice:
             model=model.name,
             messages=messages,
             stream=stream,
-            temperature=temperature,
+            temperature=self._default_temperature if temperature is None else temperature,
             max_tokens=max_tokens,
             response_format=response_format,
         )
