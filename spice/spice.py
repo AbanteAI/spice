@@ -222,6 +222,8 @@ class Spice:
             logging_dir: If not None, will log all api calls to the given directory.
 
             logging_callback: If not None, will call the given function with the SpiceResponse, the name of the run, and the name of the call after every call finishes.
+
+            default_temperature: The default temperature to use for chat completions if no other temperature is given.
         """
 
         if isinstance(default_text_model, str):
