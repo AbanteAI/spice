@@ -37,11 +37,13 @@ class ResponseModel(BaseModel):
     message: str
 
 @pytest.mark.asyncio
-async def test_response_conversion():
+async def test_response_conversion_with_exception_handling():
     async def mock_api_call():
         return '{"message": "test"}'
-
     converter = lambda x: ResponseModel.parse_raw(x)
-    response = await spice.get_response(messages=[], model=HAIKU, converter=converter)
-    assert isinstance(response, ResponseModel)
-    assert response.message == "test"
+    try:
+        response = await spice.get_response(messages=[], model=HAIKU, converter=converter, retries=1)
+    except ValueError:
+        assert False, "Conversion failed unexpectedly"
+    assert isinstance(response.result, ResponseModel)
+    assert response.result.message == "test"

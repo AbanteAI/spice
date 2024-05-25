@@ -56,6 +56,9 @@ class SpiceResponse:
     input_tokens: int
     """The number of input tokens given in this response. May be inaccurate for incomplete streamed responses."""
 
+    result: Optional[Any] = None
+    """The result of the conversion, if a converter was applied."""
+
     output_tokens: int
     """The number of output tokens given by the model in this response. May be inaccurate for incomplete streamed responses."""
 
@@ -433,7 +436,15 @@ class Spice:
                     text, input_tokens, output_tokens = client.extract_text_and_tokens(chat_completion)
 
                 if converter:
-                    text = converter(text)
+                    try:
+                        result = converter(text)
+                    except Exception as e:
+                        if retries > 0:
+                            continue  # Retry the request
+                        else:
+                            raise e  # Propagate the exception if no retries left
+                else:
+                    result = text  # No conversion applied
 
             completion_cost = text_request_cost(text_model, input_tokens, output_tokens)
             if completion_cost is not None:
@@ -441,7 +452,7 @@ class Spice:
                 self._total_cost += completion_cost
 
             end_time = timer()
-            response = SpiceResponse(call_args, text, end_time - start_time, input_tokens, output_tokens, True, cost)
+            response = SpiceResponse(call_args, text, end_time - start_time, input_tokens, output_tokens, True, cost, result)
             if validator is not None and not validator(text):
                 if name:
                     retry_name = f"{name}-retry-{i}-fail"
