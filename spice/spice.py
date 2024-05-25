@@ -21,7 +21,12 @@ from spice.providers import Provider, get_provider_from_name
 from spice.spice_message import MessagesEncoder, SpiceMessage
 from spice.utils import embeddings_request_cost, text_request_cost, transcription_request_cost
 from spice.wrapped_clients import WrappedClient
+from typing import Callable, Any
 
+Converter = Callable[[str], Any]
+
+def json_to_pydantic(response: str, model: Any) -> Any:
+    return model.parse_raw(response)
 
 @dataclass
 class SpiceCallArgs:
@@ -126,9 +131,7 @@ class StreamingSpiceResponse:
         Returns a SpiceResponse containing the response as it's been received so far.
         Will not wait for the LLM call to finish.
         """
-        if not self._finished or self._end_time is None:
-            self._end_time = timer()
-
+        if not self._finished or self._end
         full_output = "".join(self._text)
 
         input_tokens = self._input_tokens
@@ -343,9 +346,7 @@ class Spice:
         stream: bool,
         temperature: Optional[float],
         max_tokens: Optional[int],
-        response_format: Optional[ResponseFormat],
-    ):
-        # Not all providers support response format
+        response_format: Optional[Response
         if response_format is not None:
             if response_format == {"type": "text"}:
                 response_format = None
@@ -369,6 +370,7 @@ class Spice:
         response_format: Optional[ResponseFormat] = None,
         name: Optional[str] = None,
         validator: Optional[Callable[[str], bool]] = None,
+        converter: Optional[Converter] = None,
         streaming_callback: Optional[Callable[[str], None]] = None,
         retries: int = 0,
     ) -> SpiceResponse:
@@ -396,6 +398,8 @@ class Spice:
             name: If given, will be given this name when logged.
 
             validator: If given, will be called with the text of the response. If it returns False, the response will be discarded and another attempt will be made.
+
+            converter: If given, will be used to convert the response text before validation and logging.
 
             streaming_callback: If given, will be called with the text of the response as it is received.
 
@@ -427,6 +431,9 @@ class Spice:
                 else:
                     chat_completion = await client.get_chat_completion_or_stream(call_args)
                     text, input_tokens, output_tokens = client.extract_text_and_tokens(chat_completion)
+
+                if converter:
+                    text = converter(text)
 
             completion_cost = text_request_cost(text_model, input_tokens, output_tokens)
             if completion_cost is not None:
