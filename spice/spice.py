@@ -288,6 +288,7 @@ class Spice:
             full_name = f"{base_name}_{self._cur_logged_names[base_name]}.json"
             self._cur_logged_names[base_name] += 1
             response_dict = dataclasses.asdict(response)
+            response_dict.pop("_result", "")  # May not be serializable
             response_json = json.dumps(response_dict, cls=MessagesEncoder)
 
             logging_dir = self.logging_dir / self._cur_run
