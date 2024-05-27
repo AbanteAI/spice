@@ -4,12 +4,12 @@ import dataclasses
 import glob
 import json
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from json import JSONDecodeError
 from pathlib import Path
 from timeit import default_timer as timer
-from typing import Any, AsyncIterator, Callable, Collection, Dict, List, Optional, cast
+from typing import Any, AsyncIterator, Callable, Collection, Dict, Generic, List, Optional, TypeVar, Union, cast
 
 import httpx
 from jinja2 import DictLoader, Environment
@@ -19,7 +19,7 @@ from spice.errors import InvalidModelError, UnknownModelError
 from spice.models import EmbeddingModel, Model, TextModel, TranscriptionModel, get_model_from_name
 from spice.providers import Provider, get_provider_from_name
 from spice.spice_message import MessagesEncoder, SpiceMessage
-from spice.utils import embeddings_request_cost, text_request_cost, transcription_request_cost
+from spice.utils import embeddings_request_cost, string_identity, text_request_cost, transcription_request_cost
 from spice.wrapped_clients import WrappedClient
 
 
@@ -33,8 +33,11 @@ class SpiceCallArgs:
     response_format: Optional[ResponseFormat] = None
 
 
+T = TypeVar("T")
+
+
 @dataclass
-class SpiceResponse:
+class SpiceResponse(Generic[T]):
     """
     Contains a collection of information about a completed LLM call.
     """
@@ -60,6 +63,9 @@ class SpiceResponse:
     cost: Optional[float]
     """The cost of this request in cents. May be inaccurate for incompleted streamed responses. Will be None if the cost of the model used is not known."""
 
+    _result: T | None = field(default=None, repr=False)
+    """The result of the LLM call. This will be the same as text if no converter was given."""
+
     @property
     def total_tokens(self) -> int:
         """The total tokens, input and output, in this response."""
@@ -69,6 +75,12 @@ class SpiceResponse:
     def characters_per_second(self) -> float:
         """The characters per second that the model output. May be inaccurate for streamed responses if not iterated over and completed immediately."""
         return len(self.text) / self.total_time
+
+    @property
+    def result(self) -> T:
+        if self._result is None:
+            return cast(T, self.text)
+        return self._result
 
 
 class StreamingSpiceResponse:
@@ -369,9 +381,10 @@ class Spice:
         response_format: Optional[ResponseFormat] = None,
         name: Optional[str] = None,
         validator: Optional[Callable[[str], bool]] = None,
+        converter: Callable[[str], T] = string_identity,
         streaming_callback: Optional[Callable[[str], None]] = None,
         retries: int = 0,
-    ) -> SpiceResponse:
+    ) -> SpiceResponse[T]:
         """
         Asynchronously retrieves a chat completion response.
 
@@ -396,6 +409,8 @@ class Spice:
             name: If given, will be given this name when logged.
 
             validator: If given, will be called with the text of the response. If it returns False, the response will be discarded and another attempt will be made.
+
+            converter: If given, will be called with the text of the response. The result of the converter will be the result of the response. If the converter throws an exception, the response will be discarded and another attempt will be made up to retries times.
 
             streaming_callback: If given, will be called with the text of the response as it is received.
 
@@ -434,16 +449,31 @@ class Spice:
                 self._total_cost += completion_cost
 
             end_time = timer()
-            response = SpiceResponse(call_args, text, end_time - start_time, input_tokens, output_tokens, True, cost)
-            if validator is not None and not validator(text):
-                if name:
-                    retry_name = f"{name}-retry-{i}-fail"
-                else:
-                    retry_name = f"retry-{i}-fail"
-                self._log_response(response, retry_name)
+            if name:
+                retry_name = f"{name}-retry-{i}-fail"
             else:
+                retry_name = f"retry-{i}-fail"
+
+            if validator is not None and not validator(text):
+                response = SpiceResponse(
+                    call_args, text, end_time - start_time, input_tokens, output_tokens, True, cost
+                )
+                self._log_response(response, retry_name)
+                continue
+            try:
+                result = converter(text)
+                response = SpiceResponse(
+                    call_args, text, end_time - start_time, input_tokens, output_tokens, True, cost, _result=result
+                )
                 self._log_response(response, name)
                 return response
+            except Exception as e:
+                response = SpiceResponse(
+                    call_args, text, end_time - start_time, input_tokens, output_tokens, True, cost
+                )
+                self._log_response(response, retry_name)
+                continue
+
         raise ValueError("Failed to get a valid response after all retries")
 
     async def stream_response(

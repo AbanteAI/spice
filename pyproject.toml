@@ -12,7 +12,7 @@ packages=["spice"]
 
 [project]
 name = "spiceai"
-version = "0.3.7"
+version = "0.3.8"
 license = {text = "Apache-2.0"}
 description = "A Python library for building AI-powered applications."
 readme = "README.md"
