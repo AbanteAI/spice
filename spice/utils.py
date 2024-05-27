@@ -26,3 +26,7 @@ def transcription_request_cost(model: TranscriptionModel, input_length: float) -
 
 def print_stream(text: str) -> None:
     print(text, end="", flush=True)
+
+
+def string_identity(x: str) -> str:
+    return x
