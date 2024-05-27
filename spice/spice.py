@@ -63,7 +63,7 @@ class SpiceResponse(Generic[T]):
     cost: Optional[float]
     """The cost of this request in cents. May be inaccurate for incompleted streamed responses. Will be None if the cost of the model used is not known."""
 
-    _result: T | None = field(default=None, repr=False)
+    _result: T | None = field(default=None)
     """The result of the LLM call. This will be the same as text if no converter was given."""
 
     @property
@@ -288,6 +288,7 @@ class Spice:
             full_name = f"{base_name}_{self._cur_logged_names[base_name]}.json"
             self._cur_logged_names[base_name] += 1
             response_dict = dataclasses.asdict(response)
+            response_dict.pop("_result", "") # May not be serializable
             response_json = json.dumps(response_dict, cls=MessagesEncoder)
 
             logging_dir = self.logging_dir / self._cur_run
