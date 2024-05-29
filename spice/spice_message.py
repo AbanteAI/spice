@@ -5,7 +5,7 @@ import mimetypes
 from collections import UserList
 from json import JSONEncoder
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, Iterable, Optional, TypedDict
+from typing import TYPE_CHECKING, Any, Dict, Iterable, Literal, Optional, TypedDict
 
 from openai.types.chat import (
     ChatCompletionAssistantMessageParam,
@@ -23,6 +23,10 @@ SpiceMessage = ChatCompletionMessageParam
 """The message format Spice uses and accepts. Exactly the same as OpenAI's message format."""
 
 VALID_MIMETYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"]
+
+
+def create_message(role: Literal["user", "assistant", "system"], content: str) -> ChatCompletionMessageParam:
+    return {"role": role, "content": content}  # pyright: ignore
 
 
 def user_message(content: str) -> ChatCompletionUserMessageParam:
@@ -112,6 +116,9 @@ class SpiceMessages(UserList[SpiceMessage]):
         self._client = client
         super().__init__(initlist)
 
+    def add_message(self, role: Literal["user", "assistant", "system"], content: str):
+        self.data.append(create_message(role, content))
+
     def add_user_message(self, content: str):
         """Appends a user message with the given content."""
         self.data.append(user_message(content))
@@ -135,6 +142,13 @@ class SpiceMessages(UserList[SpiceMessage]):
     def add_http_image_message(self, url: str):
         """Appends a user message with the image from the given url."""
         self.data.append(http_image_message(url))
+
+    def add_prompt(self, role: Literal["user", "assistant", "system"], name: str, **context: Any):
+        prompt = self._client.get_prompt(name)
+        rendered_prompt = self._client.get_rendered_prompt(name, **context)
+        message = _MetadataDict(create_message(role, rendered_prompt))
+        message.prompt_metadata = {"name": name, "content": prompt, "context": context}
+        self.data.append(message)  # pyright: ignore
 
     def add_user_prompt(self, name: str, **context: Any):
         """Appends a user message with the given pre-loaded prompt using jinja to render the context."""
