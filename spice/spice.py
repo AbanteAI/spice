@@ -119,7 +119,7 @@ class StreamingSpiceResponse:
                 content = None
                 while content is None:
                     chunk = await anext(self._stream)
-                    content, input_tokens, output_tokens = self._client.process_chunk(chunk)
+                    content, input_tokens, output_tokens = self._client.process_chunk(chunk, self._call_args)
                     if input_tokens is not None:
                         self._input_tokens = input_tokens
                     if output_tokens is not None:
@@ -442,7 +442,7 @@ class Spice:
 
                 else:
                     chat_completion = await client.get_chat_completion_or_stream(call_args)
-                    text, input_tokens, output_tokens = client.extract_text_and_tokens(chat_completion)
+                    text, input_tokens, output_tokens = client.extract_text_and_tokens(chat_completion, call_args)
 
             completion_cost = text_request_cost(text_model, input_tokens, output_tokens)
             if completion_cost is not None:

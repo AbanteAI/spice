@@ -34,10 +34,10 @@ class WrappedClient(ABC):
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk] | Message | AsyncIterator[MessageStreamEvent]: ...
 
     @abstractmethod
-    def process_chunk(self, chunk) -> tuple[Optional[str], Optional[int], Optional[int]]: ...
+    def process_chunk(self, chunk, call_args: SpiceCallArgs) -> tuple[Optional[str], Optional[int], Optional[int]]: ...
 
     @abstractmethod
-    def extract_text_and_tokens(self, chat_completion) -> tuple[str, int, int]: ...
+    def extract_text_and_tokens(self, chat_completion, call_args: SpiceCallArgs) -> tuple[str, int, int]: ...
 
     @abstractmethod
     def catch_and_convert_errors(self) -> ContextManager[None]: ...
@@ -97,12 +97,12 @@ class WrappedOpenAIClient(WrappedClient):
         )
 
     @override
-    def process_chunk(self, chunk):
+    def process_chunk(self, chunk, call_args: SpiceCallArgs):
         content = chunk.choices[0].delta.content
         return content, None, None
 
     @override
-    def extract_text_and_tokens(self, chat_completion):
+    def extract_text_and_tokens(self, chat_completion, call_args: SpiceCallArgs):
         return (
             chat_completion.choices[0].message.content,
             chat_completion.usage.prompt_tokens,
@@ -313,6 +313,11 @@ class WrappedAnthropicClient(WrappedClient):
                     # Deprecated, nobody should use this
                     pass
 
+        if not converted_messages:
+            message_object: TextBlockParam = {"type": "text", "text": f"System:\n{system}"}
+            converted_messages.append({"role": "user", "content": [message_object]})
+            system = ""
+
         if add_json_brace and converted_messages:
             if converted_messages[-1]["role"] == "assistant" and not converted_messages[-1]["content"]:
                 converted_messages[-1]["content"] += "{"  # pyright: ignore
@@ -350,22 +355,25 @@ class WrappedAnthropicClient(WrappedClient):
         )
 
     @override
-    def process_chunk(self, chunk):
+    def process_chunk(self, chunk, call_args: SpiceCallArgs):
         content = None
         input_tokens = None
         output_tokens = None
         if chunk.type == "content_block_delta":
             content = chunk.delta.text
         elif chunk.type == "message_start":
+            if call_args.response_format is not None and call_args.response_format.get("type") == "json_object":
+                content = "{"
             input_tokens = chunk.message.usage.input_tokens
         elif chunk.type == "message_delta":
             output_tokens = chunk.usage.output_tokens
         return content, input_tokens, output_tokens
 
     @override
-    def extract_text_and_tokens(self, chat_completion):
+    def extract_text_and_tokens(self, chat_completion, call_args: SpiceCallArgs):
+        add_brace = call_args.response_format is not None and call_args.response_format.get("type") == "json_object"
         return (
-            chat_completion.content[0].text,
+            ("{" if add_brace else "") + chat_completion.content[0].text,
             chat_completion.usage.input_tokens,
             chat_completion.usage.output_tokens,
         )
