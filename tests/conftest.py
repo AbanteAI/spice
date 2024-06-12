@@ -86,11 +86,13 @@ class WrappedTestClient(WrappedClient):
         return 0
 
     @override
-    def process_chunk(self, chunk: ChatCompletionChunk) -> tuple[str, Optional[int], Optional[int]]:
+    def process_chunk(
+        self, chunk: ChatCompletionChunk, call_args: SpiceCallArgs
+    ) -> tuple[str, Optional[int], Optional[int]]:
         return chunk.choices[0].delta.content or "", None, None
 
     @override
-    def extract_text_and_tokens(self, chat_completion) -> tuple[str, int, int]:
+    def extract_text_and_tokens(self, chat_completion, call_args: SpiceCallArgs) -> tuple[str, int, int]:
         return (chat_completion.choices[0].message.content, 0, 0)
 
     @override
