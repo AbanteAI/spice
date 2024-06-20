@@ -435,6 +435,8 @@ class Spice:
 
             retries: The number of times to retry getting a valid response. If 0, will not retry.
             If after all retries no valid response is received, will raise a ValueError.
+            Will automatically raise the temperature to a minimum of 0.2 for the first retry
+            and 0.5 for any remaining retries.
         """
         cost = 0
         for i in range(retries + 1):
@@ -444,6 +446,10 @@ class Spice:
             call_args = self._fix_call_args(
                 messages, text_model, streaming_callback is not None, temperature, max_tokens, response_format
             )
+            if i == 1 and call_args.temperature is not None:
+                call_args.temperature = max(0.2, call_args.temperature)
+            elif i > 1 and call_args.temperature is not None:
+                call_args.temperature = max(0.5, call_args.temperature)
 
             with client.catch_and_convert_errors():
                 if streaming_callback is not None:

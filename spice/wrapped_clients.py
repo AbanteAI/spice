@@ -6,7 +6,7 @@ import mimetypes
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, AsyncIterator, Collection, ContextManager, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, AsyncIterator, Collection, ContextManager, Dict, List, Optional, Tuple, cast
 
 import anthropic
 import httpx
@@ -91,6 +91,7 @@ class WrappedOpenAIClient(WrappedClient):
             model=call_args.model,
             messages=list(call_args.messages),
             stream=call_args.stream,
+            stream_options={"include_usage": True},
             temperature=call_args.temperature,
             max_tokens=max_tokens,
             **maybe_response_format_kwargs,
@@ -98,8 +99,14 @@ class WrappedOpenAIClient(WrappedClient):
 
     @override
     def process_chunk(self, chunk, call_args: SpiceCallArgs):
+        chunk = cast(ChatCompletionChunk, chunk)
         content = chunk.choices[0].delta.content
-        return content, None, None
+        input_tokens = None
+        output_tokens = None
+        if chunk.usage is not None:
+            input_tokens = chunk.usage.prompt_tokens
+            output_tokens = chunk.usage.completion_tokens
+        return content, input_tokens, output_tokens
 
     @override
     def extract_text_and_tokens(self, chat_completion, call_args: SpiceCallArgs):
