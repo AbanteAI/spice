@@ -124,6 +124,10 @@ CLAUDE_3_SONNET_20240229 = TextModel(
     "claude-3-sonnet-20240229", ANTHROPIC, input_cost=300, output_cost=1500, context_length=200000
 )
 SONNET = CLAUDE_3_SONNET_20240229
+CLAUDE_3_5_SONNET_20240620 = TextModel(
+    "claude-3-5-sonnet-20240620", ANTHROPIC, input_cost=300, output_cost=1500, context_length=200000
+)
+SONNET_3_5 = CLAUDE_3_5_SONNET_20240620
 CLAUDE_3_HAIKU_20240307 = TextModel(
     "claude-3-haiku-20240307", ANTHROPIC, input_cost=25, output_cost=125, context_length=200000
 )
