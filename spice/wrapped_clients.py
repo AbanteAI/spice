@@ -6,7 +6,7 @@ import mimetypes
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, AsyncIterator, Collection, ContextManager, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, AsyncIterator, Collection, ContextManager, Dict, List, Optional, Tuple, cast
 
 import anthropic
 import httpx
@@ -75,11 +75,11 @@ class WrappedOpenAIClient(WrappedClient):
     @override
     async def get_chat_completion_or_stream(self, call_args: SpiceCallArgs):
         # WrappedOpenAIClient can be used with a proxy to a non openai llm, which may not support response_format
-        maybe_response_format_kwargs: Dict[str, Any] = (
-            {"response_format": call_args.response_format}
-            if call_args.response_format is not None and "type" in call_args.response_format
-            else {}
-        )
+        maybe_kwargs: Dict[str, Any] = {}
+        if call_args.response_format is not None and "type" in call_args.response_format:
+            maybe_kwargs["response_format"] = call_args.response_format
+        if call_args.stream:
+            maybe_kwargs["stream_options"] = {"include_usage": True}
 
         # GPT-4-vision has low default max_tokens
         if call_args.max_tokens is None and "gpt-4" in call_args.model and "vision-preview" in call_args.model:
@@ -93,13 +93,19 @@ class WrappedOpenAIClient(WrappedClient):
             stream=call_args.stream,
             temperature=call_args.temperature,
             max_tokens=max_tokens,
-            **maybe_response_format_kwargs,
+            **maybe_kwargs,
         )
 
     @override
     def process_chunk(self, chunk, call_args: SpiceCallArgs):
+        chunk = cast(ChatCompletionChunk, chunk)
         content = chunk.choices[0].delta.content
-        return content, None, None
+        input_tokens = None
+        output_tokens = None
+        if chunk.usage is not None:
+            input_tokens = chunk.usage.prompt_tokens
+            output_tokens = chunk.usage.completion_tokens
+        return content, input_tokens, output_tokens
 
     @override
     def extract_text_and_tokens(self, chat_completion, call_args: SpiceCallArgs):

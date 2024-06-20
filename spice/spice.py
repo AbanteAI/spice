@@ -55,13 +55,22 @@ class SpiceResponse(Generic[T]):
     """The number of input tokens given in this response. May be inaccurate for incomplete streamed responses."""
 
     output_tokens: int
-    """The number of output tokens given by the model in this response. May be inaccurate for incomplete streamed responses."""
+    """
+    The number of output tokens given by the model in this response.
+    May be inaccurate for incomplete streamed responses.
+    """
 
     completed: bool
-    """Whether or not this response was fully completed. This will only ever be false for incomplete streamed responses."""
+    """
+    Whether or not this response was fully completed.
+    This will only ever be false for incomplete streamed responses.
+    """
 
     cost: Optional[float]
-    """The cost of this request in cents. May be inaccurate for incompleted streamed responses. Will be None if the cost of the model used is not known."""
+    """
+    The cost of this request in cents. May be inaccurate for incompleted streamed responses.
+    Will be None if the cost of the model used is not known.
+    """
 
     _result: T | None = field(default=None, repr=False)
     """The result of the LLM call. This will be the same as text if no converter was given."""
@@ -73,7 +82,10 @@ class SpiceResponse(Generic[T]):
 
     @property
     def characters_per_second(self) -> float:
-        """The characters per second that the model output. May be inaccurate for streamed responses if not iterated over and completed immediately."""
+        """
+        The characters per second that the model output.
+        May be inaccurate for streamed responses if not iterated over and completed immediately.
+        """
         return len(self.text) / self.total_time
 
     @property
@@ -233,7 +245,8 @@ class Spice:
 
             logging_dir: If not None, will log all api calls to the given directory.
 
-            logging_callback: If not None, will call the given function with the SpiceResponse, the name of the run, and the name of the call after every call finishes.
+            logging_callback: If not None, will call the given function with the SpiceResponse, the name of the run,
+            and the name of the call after every call finishes.
 
             default_temperature: The default temperature to use for chat completions if no other temperature is given.
         """
@@ -398,7 +411,8 @@ class Spice:
             Will raise an InvalidModelError if the model is not a text model.
             Will raise an UnknownModelError if the model is unknown and no provider was given.
 
-            provider: The provider to use. If specified, will override the model's default provider if known. Must be specified if an unknown model is used.
+            provider: The provider to use. If specified, will override the model's default provider if known.
+            Must be specified if an unknown model is used.
 
             temperature: The temperature to give the model.
 
@@ -409,13 +423,20 @@ class Spice:
 
             name: If given, will be given this name when logged.
 
-            validator: If given, will be called with the text of the response. If it returns False, the response will be discarded and another attempt will be made.
+            validator: If given, will be called with the text of the response.
+            If it returns False, the response will be discarded and another attempt will be made.
 
-            converter: If given, will be called with the text of the response. The result of the converter will be the result of the response. If the converter throws an exception, the response will be discarded and another attempt will be made up to retries times.
+            converter: If given, will be called with the text of the response.
+            The result of the converter will be the result of the response.
+            If the converter throws an exception, the response will be discarded
+            and another attempt will be made up to retries times.
 
             streaming_callback: If given, will be called with the text of the response as it is received.
 
-            retries: The number of times to retry getting a valid response. If 0, will not retry. If after all retries no valid response is received, will raise a ValueError.
+            retries: The number of times to retry getting a valid response. If 0, will not retry.
+            If after all retries no valid response is received, will raise a ValueError.
+            Will automatically raise the temperature to a minimum of 0.2 for the first retry
+            and 0.5 for any remaining retries.
         """
         cost = 0
         for i in range(retries + 1):
@@ -425,6 +446,10 @@ class Spice:
             call_args = self._fix_call_args(
                 messages, text_model, streaming_callback is not None, temperature, max_tokens, response_format
             )
+            if i == 1 and call_args.temperature is not None:
+                call_args.temperature = max(0.2, call_args.temperature)
+            elif i > 1 and call_args.temperature is not None:
+                call_args.temperature = max(0.5, call_args.temperature)
 
             with client.catch_and_convert_errors():
                 if streaming_callback is not None:
@@ -500,7 +525,8 @@ class Spice:
             Will raise an InvalidModelError if the model is not a text model.
             Will raise an UnknownModelError if the model is unknown and no provider was given.
 
-            provider: The provider to use. If specified, will override the model's default provider if known. Must be specified if an unknown model is used.
+            provider: The provider to use. If specified, will override the model's default provider if known.
+            Must be specified if an unknown model is used.
 
             temperature: The temperature to give the model.
 
@@ -524,7 +550,8 @@ class Spice:
             if response.cost is not None:
                 self._total_cost += response.cost - cache[0]
                 cache[0] = response.cost
-            # TODO: Do we want to log multiple times? Our old log might be incomplete, which is why this is still in, but probably not necessary.
+            # TODO: Do we want to log multiple times? Our old log might be incomplete, which is why this is still in,
+            # but probably not necessary.
             self._log_response(response, name)
 
         return StreamingSpiceResponse(text_model, call_args, client, stream, callback, streaming_callback)
@@ -563,7 +590,8 @@ class Spice:
             Will raise an InvalidModelError if the model is not a embedding model.
             Will raise an UnknownModelError if the model is unknown and no provider was given.
 
-            provider: The provider to use. If specified, will override the model's default provider if known. Must be specified if an unknown model is used.
+            provider: The provider to use. If specified, will override the model's default provider if known.
+            Must be specified if an unknown model is used.
         """
 
         embedding_model = self._get_embedding_model(model)
@@ -598,7 +626,8 @@ class Spice:
             Will raise an InvalidModelError if the model is not a embedding model.
             Will raise an UnknownModelError if the model is unknown and no provider was given.
 
-            provider: The provider to use. If specified, will override the model's default provider if known. Must be specified if an unknown model is used.
+            provider: The provider to use. If specified, will override the model's default provider if known.
+            Must be specified if an unknown model is used.
         """
 
         embedding_model = self._get_embedding_model(model)
@@ -640,11 +669,13 @@ class Spice:
         Args:
             audio_path: The path to the audio file to transcribe.
 
-            model: The model to use. Must be a transciption model. If the model is unknown to Spice, a provider must be given.
+            model: The model to use. Must be a transciption model.
+            If the model is unknown to Spice, a provider must be given.
             Will raise an InvalidModelError if the model is not a transciption model.
             Will raise an UnknownModelError if the model is unknown and no provider was given.
 
-            provider: The provider to use. If specified, will override the model's default provider if known. Must be specified if an unknown model is used.
+            provider: The provider to use. If specified, will override the model's default provider if known.
+            Must be specified if an unknown model is used.
         """
 
         transcription_model = self._get_transcription_model(model)
@@ -673,11 +704,14 @@ class Spice:
         Args:
             text: The text to count the tokens of.
 
-            model: The model whose tokenizer will be used. Will raise UnknownModelError if the model is unknown and no provider is given.
+            model: The model whose tokenizer will be used.
+            Will raise UnknownModelError if the model is unknown and no provider is given.
 
-            provider: The provider to use. If specified, will override the model's default provider if known. Must be specified if an unknown model is used.
+            provider: The provider to use. If specified, will override the model's default provider if known.
+            Must be specified if an unknown model is used.
 
-            is_message: If true, will include the extra tokens that messages in chat completions add on. Most of the time, you'll want to keep this false.
+            is_message: If true, will include the extra tokens that messages in chat completions add on.
+            Most of the time, you'll want to keep this false.
         """
 
         model = self._get_model(model)
@@ -694,9 +728,11 @@ class Spice:
         Args:
             messages: The messages to count the tokens of.
 
-            model: The model whose tokenizer will be used. Will raise UnknownModelError if the model is unknown and no provider is given.
+            model: The model whose tokenizer will be used.
+            Will raise UnknownModelError if the model is unknown and no provider is given.
 
-            provider: The provider to use. If specified, will override the model's default provider if known. Must be specified if an unknown model is used.
+            provider: The provider to use. If specified, will override the model's default provider if known.
+            Must be specified if an unknown model is used.
         """
 
         model = self._get_model(model)
@@ -715,7 +751,8 @@ class Spice:
         Args:
             prompt: The prompt to store.
 
-            name: The name of the prompt. If the name collides with the name of a previously loaded prompt, the previous prompt will be overwritten.
+            name: The name of the prompt.
+            If the name collides with the name of a previously loaded prompt, the previous prompt will be overwritten.
         """
 
         if name in self._prompts:
@@ -761,7 +798,8 @@ class Spice:
         Args:
             file_path: The path to the file. Must be a text encoded file.
 
-            name: The name of the prompt. If no name is given, the name will be the file name without the extension; i.e., the name of /path/to/prompt.txt will be `prompt`.
+            name: The name of the prompt. If no name is given, the name will be the file name without the extension;
+            i.e., the name of /path/to/prompt.txt will be `prompt`.
             If the name collides with the name of a previously loaded prompt, the previous prompt will be overwritten.
         """
 
@@ -789,13 +827,15 @@ class Spice:
 
     def load_toml_prompts(self, file_path: Path | str, name: Optional[str] = None):
         """
-        Loads prompts from a given toml file. The names of the prompts in the file will be prefixed by `{name}.`, so a file named prompts.toml containing `prompt1 = "Hi!"` would load the prompt as `prompts.prompt1`.
+        Loads prompts from a given toml file. The names of the prompts in the file will be prefixed by `{name}.`,
+        so a file named prompts.toml containing `prompt1 = "Hi!"` would load the prompt as `prompts.prompt1`.
         Only available for Python 3.11 (when tomllib was introduced)!
 
         Args:
             file_path: The path to the file. Must be a text encoded file containing valid TOML.
 
-            name: The name of the prompt. If no name is given, the name will be the file name without the extension; i.e., the name of /path/to/prompt.toml will be `prompt`.
+            name: The name of the prompt. If no name is given, the name will be the file name without the extension;
+            i.e., the name of /path/to/prompt.toml will be `prompt`.
             If the name collides with the name of a previously loaded prompt, the previous prompt will be overwritten.
         """
 
@@ -815,9 +855,11 @@ class Spice:
 
     def load_dir(self, dir_path: Path | str):
         """
-        Loads a prompts from a given directory. Will recursively load all text encoded .txt (and .toml if using Python 3.11) files in the directory and its subdirectories.
-        Prompt names will be the filenames with their extension stripped with a `.` separating each subdirectory. For example, this directory would have these prompt names:
-        If any name collides with the name of a previously loaded prompt, the previous prompt will be overwritten.
+        Loads a prompts from a given directory.
+        Will recursively load all text encoded .txt (and .toml if using Python 3.11) files
+        in the directory and its subdirectories.
+        Prompt names will be the filenames with their extension stripped with a `.` separating each subdirectory.
+        For example, this directory would have these prompt names:
 
         ```
         dir_path/
@@ -827,6 +869,7 @@ class Spice:
             prompt_2.txt            - prompt_2
             another_prompt.txt      - another_prompt.txt
         ```
+        If any name collides with the name of a previously loaded prompt, the previous prompt will be overwritten.
 
         Args:
             dir_path: The path to the directory.
@@ -867,7 +910,8 @@ class Spice:
 
     def load_url(self, url: str, name: str):
         """
-        Loads a prompt from the given url. Will send a GET request to the url and expects a response with either the following schema or a toml file (.toml only available for Python 3.11 and onwards):
+        Loads a prompt from the given url. Will send a GET request to the url and expects a response with either the
+        following schema or a toml file (.toml only available for Python 3.11 and onwards):
         ```
         {
             "prompts": [
