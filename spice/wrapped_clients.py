@@ -75,11 +75,11 @@ class WrappedOpenAIClient(WrappedClient):
     @override
     async def get_chat_completion_or_stream(self, call_args: SpiceCallArgs):
         # WrappedOpenAIClient can be used with a proxy to a non openai llm, which may not support response_format
-        maybe_response_format_kwargs: Dict[str, Any] = (
-            {"response_format": call_args.response_format}
-            if call_args.response_format is not None and "type" in call_args.response_format
-            else {}
-        )
+        maybe_kwargs: Dict[str, Any] = {}
+        if call_args.response_format is not None and "type" in call_args.response_format:
+            maybe_kwargs["response_format"] = call_args.response_format
+        if call_args.stream:
+            maybe_kwargs["stream_options"] = {"include_usage": True}
 
         # GPT-4-vision has low default max_tokens
         if call_args.max_tokens is None and "gpt-4" in call_args.model and "vision-preview" in call_args.model:
@@ -91,10 +91,9 @@ class WrappedOpenAIClient(WrappedClient):
             model=call_args.model,
             messages=list(call_args.messages),
             stream=call_args.stream,
-            stream_options={"include_usage": True},
             temperature=call_args.temperature,
             max_tokens=max_tokens,
-            **maybe_response_format_kwargs,
+            **maybe_kwargs,
         )
 
     @override
