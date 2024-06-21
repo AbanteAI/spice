@@ -99,7 +99,9 @@ class WrappedOpenAIClient(WrappedClient):
     @override
     def process_chunk(self, chunk, call_args: SpiceCallArgs):
         chunk = cast(ChatCompletionChunk, chunk)
-        content = chunk.choices[0].delta.content
+        content = None
+        if len(chunk.choices) > 0:
+            content = chunk.choices[0].delta.content
         input_tokens = None
         output_tokens = None
         if chunk.usage is not None:
