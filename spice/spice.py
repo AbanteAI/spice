@@ -286,6 +286,30 @@ class Spice:
         self.logging_callback = logging_callback
         self.new_run("spice")
 
+    async def call_llm(self, client: WrappedClient, call_args: SpiceCallArgs, streaming_callback: Optional[Callable[[str], None]] = None):
+        retries = 0
+        delay = self.base_delay
+        while retries <= self.max_retries:
+            try:
+                with client.catch_and_convert_errors():
+                    if streaming_callback is not None:
+                        stream = await client.get_chat_completion_or_stream(call_args)
+                        stream = cast(AsyncIterator, stream)
+                        streaming_spice_response = StreamingSpiceResponse(
+                            self._get_text_model(call_args.model), call_args, client, stream, None, streaming_callback
+                        )
+                        return await streaming_spice_response.complete_response()
+                    else:
+                        chat_completion = await client.get_chat_completion_or_stream(call_args)
+                        text, input_tokens, output_tokens = client.extract_text_and_tokens(chat_completion, call_args)
+                        return text, input_tokens, output_tokens
+            except (APIConnectionError, APIError) as e:
+                if retries == self.max_retries:
+                    raise e
+                time.sleep(min(delay, self.max_delay))
+                delay *= 2
+                retries += 1
+
     def new_run(self, name: str):
         """
         Create a new run. All llm calls will be logged in a folder with the run name and a timestamp.
@@ -459,23 +483,12 @@ class Spice:
             elif i > 1 and call_args.temperature is not None:
                 call_args.temperature = max(0.5, call_args.temperature)
 
-            with client.catch_and_convert_errors(max_retries=self.max_retries, base_delay=self.base_delay, max_delay=self.max_delay):
-                if streaming_callback is not None:
-                    stream = await client.get_chat_completion_or_stream(call_args)
-                    stream = cast(AsyncIterator, stream)
-                    streaming_spice_response = StreamingSpiceResponse(
-                        text_model, call_args, client, stream, None, streaming_callback
-                    )
-                    chat_completion = await streaming_spice_response.complete_response()
-                    text, input_tokens, output_tokens = (
-                        chat_completion.text,
-                        chat_completion.input_tokens,
-                        chat_completion.output_tokens,
-                    )
-
-                else:
-                    chat_completion = await client.get_chat_completion_or_stream(call_args)
-                    text, input_tokens, output_tokens = client.extract_text_and_tokens(chat_completion, call_args)
+            try:
+                text, input_tokens, output_tokens = await self.call_llm(client, call_args, streaming_callback)
+            except (APIConnectionError, APIError) as e:
+                if i == retries:
+                    raise e
+                continue
 
             completion_cost = text_request_cost(text_model, input_tokens, output_tokens)
             if completion_cost is not None:
@@ -550,8 +563,11 @@ class Spice:
         client = self._get_client(text_model, provider)
         call_args = self._fix_call_args(messages, text_model, True, temperature, max_tokens, response_format)
 
-        with client.catch_and_convert_errors():
-            stream = await client.get_chat_completion_or_stream(call_args)
+        try:
+            stream = await self.call_llm(client, call_args, streaming_callback)
+        except (APIConnectionError, APIError) as e:
+            raise e
+
         stream = cast(AsyncIterator, stream)
 
         def callback(response: SpiceResponse, cache: List[float] = [0]):

@@ -120,24 +120,15 @@ class WrappedOpenAIClient(WrappedClient):
 
     @override
     @contextmanager
-    def catch_and_convert_errors(self, max_retries: int = 0, base_delay: float = 1.0, max_delay: float = 32.0):
-        retries = 0
-        delay = base_delay
-        while retries <= max_retries:
-            try:
-                yield
-                return
-            except openai.APIConnectionError as e:
-                if retries == max_retries:
-                    raise APIConnectionError(f"OpenAI Connection Error: {e.message}") from e
-            except openai.AuthenticationError as e:
-                raise AuthenticationError(f"OpenAI Authentication Error: {e.message}") from e
-            except openai.APIStatusError as e:
-                if retries == max_retries:
-                    raise APIError(f"OpenAI Status Error: {e.message}") from e
-            time.sleep(min(delay, max_delay))
-            delay *= 2
-            retries += 1
+    def catch_and_convert_errors(self):
+        try:
+            yield
+        except openai.APIConnectionError as e:
+            raise APIConnectionError(f"OpenAI Connection Error: {e.message}") from e
+        except openai.AuthenticationError as e:
+            raise AuthenticationError(f"OpenAI Authentication Error: {e.message}") from e
+        except openai.APIStatusError as e:
+            raise APIError(f"OpenAI Status Error: {e.message}") from e
 
     def _get_encoding_for_model(self, model: Model | str) -> tiktoken.Encoding:
         from spice.models import Model
@@ -397,26 +388,16 @@ class WrappedAnthropicClient(WrappedClient):
 
     @override
     @contextmanager
-    def catch_and_convert_errors(self, max_retries: int = 0, base_delay: float = 1.0, max_delay: float = 32.0):
-        retries = 0
-        delay = base_delay
-        while retries <= max_retries:
-            try:
-                yield
-                return
-            except anthropic.APIConnectionError as e:
-                if retries == max_retries:
-                    raise APIConnectionError(f"Anthropic Connection Error: {e.message}") from e
-            except anthropic.AuthenticationError as e:
-                raise AuthenticationError(f"Anthropic Authentication Error: {e.message}") from e
-            except anthropic.APIStatusError as e:
-                if retries == max_retries:
-                    raise APIError(f"Anthropic Status Error: {e.message}") from e
-            time.sleep(min(delay, max_delay))
-            delay *= 2
-            retries += 1
+    def catch_and_convert_errors(self):
+        try:
+            yield
+        except anthropic.APIConnectionError as e:
+            raise APIConnectionError(f"Anthropic Connection Error: {e.message}") from e
+        except anthropic.AuthenticationError as e:
+            raise AuthenticationError(f"Anthropic Authentication Error: {e.message}") from e
+        except anthropic.APIStatusError as e:
+            raise APIError(f"Anthropic Status Error: {e.message}") from e
 
-    # Anthropic doesn't give us a way to count tokens, so we just use OpenAI's token counting functions and multiply by a pre-determined multiplier
     class _FakeWrappedOpenAIClient(WrappedOpenAIClient):
         def __init__(self):
             pass
