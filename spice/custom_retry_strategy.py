@@ -3,7 +3,7 @@ from spice.spice import SpiceCallArgs
 from typing import Any, Callable, Optional
 
 class AddModelResponseRetryStrategy(RetryStrategy):
-    def __init__(self, validator: Optional[Callable[[str], bool]] = None, converter: Callable[[str], Any]] = str, retries: int = 0):
+    def __init__(self, converter: Callable[[str], Any] = str, validator: Optional[Callable[[str], bool]] = None, retries: int = 0):
         self.validator = validator
         self.converter = converter
         self.retries = retries

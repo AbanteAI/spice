@@ -16,11 +16,11 @@ from typing import Any, AsyncIterator, Callable, Collection, Dict, Generic, List
 import httpx
 from jinja2 import DictLoader, Environment
 from openai.types.chat.completion_create_params import ResponseFormat
-from spice.retry_strategy import DefaultRetryStrategy, RetryStrategy
 
 from spice.errors import InvalidModelError, UnknownModelError
 from spice.models import EmbeddingModel, Model, TextModel, TranscriptionModel, get_model_from_name
 from spice.providers import Provider, get_provider_from_name
+from spice.retry_strategy import DefaultRetryStrategy, RetryStrategy
 from spice.spice_message import MessagesEncoder, SpiceMessage
 from spice.utils import embeddings_request_cost, string_identity, text_request_cost, transcription_request_cost
 from spice.wrapped_clients import WrappedClient
