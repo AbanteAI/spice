@@ -2,6 +2,7 @@ import pytest
 
 from spice import Spice
 from spice.models import HAIKU
+from spice.custom_retry_strategy import AddModelResponseRetryStrategy
 from tests.conftest import WrappedTestClient
 
 
@@ -63,3 +64,21 @@ async def test_get_response_converter():
 
     assert response.text == "42"
     assert response.result == 42
+
+@pytest.mark.asyncio
+async def test_add_model_response_retry_strategy():
+    client = WrappedTestClient(iter(["Invalid response", "Valid response"]))
+    
+    def always_invalid(response):
+        return False
+
+    retry_strategy = AddModelResponseRetryStrategy(validator=always_invalid, retries=1)
+    spice = Spice()
+
+    def return_wrapped_client(model, provider):
+        return client
+
+    spice._get_client = return_wrapped_client
+    response = await spice.get_response(messages=[], model=HAIKU, retry_strategy=retry_strategy)
+
+    assert "Previous response: Invalid response" in response.text

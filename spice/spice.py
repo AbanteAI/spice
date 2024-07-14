@@ -16,6 +16,7 @@ from enum import Enum
 import httpx
 from jinja2 import DictLoader, Environment
 from openai.types.chat.completion_create_params import ResponseFormat
+from spice.retry_strategy import RetryStrategy, DefaultRetryStrategy
 
 from spice.errors import InvalidModelError, UnknownModelError
 from spice.models import EmbeddingModel, Model, TextModel, TranscriptionModel, get_model_from_name
@@ -95,37 +96,6 @@ class SpiceResponse(Generic[T]):
         if self._result is None:
             return cast(T, self.text)
         return self._result
-
-
-class Behavior(Enum):
-    RETRY = "retry"
-    RETURN = "return"
-
-class RetryStrategy(ABC):
-    @abstractmethod
-    def decide(self, call_args: SpiceCallArgs, attempt_number: int, model_output: str) -> tuple[Behavior, SpiceCallArgs, Any]:
-        pass
-
-class DefaultRetryStrategy(RetryStrategy):
-    def __init__(self, validator: Optional[Callable[[str], bool]] = None, converter: Callable[[str], T] = string_identity, retries: int = 0):
-        self.validator = validator
-        self.converter = converter
-        self.retries = retries
-
-    def decide(self, call_args: SpiceCallArgs, attempt_number: int, model_output: str) -> tuple[Behavior, SpiceCallArgs, Any]:
-        if self.validator and not self.validator(model_output):
-            if attempt_number < self.retries:
-                return Behavior.RETRY, call_args, None
-            else:
-                raise ValueError("Failed to get a valid response after all retries")
-        try:
-            result = self.converter(model_output)
-            return Behavior.RETURN, call_args, result
-        except Exception:
-            if attempt_number < self.retries:
-                return Behavior.RETRY, call_args, None
-            else:
-                raise ValueError("Failed to get a valid response after all retries")
 
 
 class StreamingSpiceResponse:
