@@ -1,9 +1,9 @@
-from typing import Any, Callable, Optional
 from spice.retry_strategy import Behavior, RetryStrategy
 from spice.spice import SpiceCallArgs
+from typing import Any, Callable, Optional
 
 class AddModelResponseRetryStrategy(RetryStrategy):
-    def __init__(self, validator: Optional[Callable[[str], bool]] = None, converter: Callable[[str], Any] = str, retries: int = 0):
+    def __init__(self, validator: Optional[Callable[[str], bool]] = None, converter: Callable[[str], Any]] = str, retries: int = 0):
         self.validator = validator
         self.converter = converter
         self.retries = retries

@@ -3,20 +3,20 @@ from __future__ import annotations
 import dataclasses
 import glob
 import json
+from abc import ABC, abstractmethod
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
+from enum import Enum
 from json import JSONDecodeError
 from pathlib import Path
 from timeit import default_timer as timer
 from typing import Any, AsyncIterator, Callable, Collection, Dict, Generic, List, Optional, TypeVar, Union, cast
-from abc import ABC, abstractmethod
-from enum import Enum
 
 import httpx
 from jinja2 import DictLoader, Environment
 from openai.types.chat.completion_create_params import ResponseFormat
-from spice.retry_strategy import RetryStrategy, DefaultRetryStrategy
+from spice.retry_strategy import DefaultRetryStrategy, RetryStrategy
 
 from spice.errors import InvalidModelError, UnknownModelError
 from spice.models import EmbeddingModel, Model, TextModel, TranscriptionModel, get_model_from_name

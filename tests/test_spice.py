@@ -1,8 +1,8 @@
 import pytest
 
 from spice import Spice
-from spice.models import HAIKU
 from spice.custom_retry_strategy import AddModelResponseRetryStrategy
+from spice.models import HAIKU
 from tests.conftest import WrappedTestClient
 
 
