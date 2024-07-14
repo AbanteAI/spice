@@ -95,6 +95,40 @@ class SpiceResponse(Generic[T]):
         return self._result
 
 
+from abc import ABC, abstractmethod
+from enum import Enum
+
+class Behavior(Enum):
+    RETRY = "retry"
+    RETURN = "return"
+
+class RetryStrategy(ABC):
+    @abstractmethod
+    def decide(self, call_args: SpiceCallArgs, attempt_number: int, model_output: str) -> tuple[Behavior, SpiceCallArgs, Any]:
+        pass
+
+class DefaultRetryStrategy(RetryStrategy):
+    def __init__(self, validator: Optional[Callable[[str], bool]] = None, converter: Callable[[str], T] = string_identity, retries: int = 0):
+        self.validator = validator
+        self.converter = converter
+        self.retries = retries
+
+    def decide(self, call_args: SpiceCallArgs, attempt_number: int, model_output: str) -> tuple[Behavior, SpiceCallArgs, Any]:
+        if self.validator and not self.validator(model_output):
+            if attempt_number < self.retries:
+                return Behavior.RETRY, call_args, None
+            else:
+                raise ValueError("Failed to get a valid response after all retries")
+        try:
+            result = self.converter(model_output)
+            return Behavior.RETURN, call_args, result
+        except Exception:
+            if attempt_number < self.retries:
+                return Behavior.RETRY, call_args, None
+            else:
+                raise ValueError("Failed to get a valid response after all retries")
+
+
 class StreamingSpiceResponse:
     """
     Returned from a streaming llm call. Can be iterated over asynchronously to retrieve the content.
@@ -398,6 +432,7 @@ class Spice:
         converter: Callable[[str], T] = string_identity,
         streaming_callback: Optional[Callable[[str], None]] = None,
         retries: int = 0,
+        retry_strategy: Optional[RetryStrategy] = None,
     ) -> SpiceResponse[T]:
         """
         Asynchronously retrieves a chat completion response.
@@ -437,18 +472,24 @@ class Spice:
             If after all retries no valid response is received, will raise a ValueError.
             Will automatically raise the temperature to a minimum of 0.2 for the first retry
             and 0.5 for any remaining retries.
+
+            retry_strategy: The strategy to use for retrying the request. If None, a DefaultRetryStrategy will be used.
         """
+        if retry_strategy is None:
+            retry_strategy = DefaultRetryStrategy(validator, converter, retries)
+
         cost = 0
-        for i in range(retries + 1):
+        attempt_number = 0
+        while True:
             start_time = timer()
             text_model = self._get_text_model(model)
             client = self._get_client(text_model, provider)
             call_args = self._fix_call_args(
                 messages, text_model, streaming_callback is not None, temperature, max_tokens, response_format
             )
-            if i == 1 and call_args.temperature is not None:
+            if attempt_number == 1 and call_args.temperature is not None:
                 call_args.temperature = max(0.2, call_args.temperature)
-            elif i > 1 and call_args.temperature is not None:
+            elif attempt_number > 1 and call_args.temperature is not None:
                 call_args.temperature = max(0.5, call_args.temperature)
 
             with client.catch_and_convert_errors():
@@ -464,7 +505,6 @@ class Spice:
                         chat_completion.input_tokens,
                         chat_completion.output_tokens,
                     )
-
                 else:
                     chat_completion = await client.get_chat_completion_or_stream(call_args)
                     text, input_tokens, output_tokens = client.extract_text_and_tokens(chat_completion, call_args)
@@ -476,29 +516,23 @@ class Spice:
 
             end_time = timer()
             if name:
-                retry_name = f"{name}-retry-{i}-fail"
+                retry_name = f"{name}-retry-{attempt_number}-fail"
             else:
-                retry_name = f"retry-{i}-fail"
+                retry_name = f"retry-{attempt_number}-fail"
 
-            if validator is not None and not validator(text):
-                response = SpiceResponse(
-                    call_args, text, end_time - start_time, input_tokens, output_tokens, True, cost
-                )
-                self._log_response(response, retry_name)
-                continue
-            try:
-                result = converter(text)
+            behavior, next_call_args, result = retry_strategy.decide(call_args, attempt_number, text)
+            if behavior == Behavior.RETURN:
                 response = SpiceResponse(
                     call_args, text, end_time - start_time, input_tokens, output_tokens, True, cost, _result=result
                 )
                 self._log_response(response, name)
                 return response
-            except Exception as e:
+            else:
                 response = SpiceResponse(
                     call_args, text, end_time - start_time, input_tokens, output_tokens, True, cost
                 )
                 self._log_response(response, retry_name)
-                continue
+                attempt_number += 1
 
         raise ValueError("Failed to get a valid response after all retries")
 

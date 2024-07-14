@@ -20,8 +20,8 @@ async def test_get_response_validator():
         return client
 
     spice._get_client = return_wrapped_client
-
-    response = await spice.get_response(messages=[], model=HAIKU, validator=validator, retries=2)
+    retry_strategy = DefaultRetryStrategy(validator=validator, retries=2)
+    response = await spice.get_response(messages=[], model=HAIKU, retry_strategy=retry_strategy)
 
     assert response.text == "test"
 
@@ -58,8 +58,8 @@ async def test_get_response_converter():
         return client
 
     spice._get_client = return_wrapped_client
-
-    response = await spice.get_response(messages=[], model=HAIKU, converter=int, retries=2)
+    retry_strategy = DefaultRetryStrategy(converter=int, retries=2)
+    response = await spice.get_response(messages=[], model=HAIKU, retry_strategy=retry_strategy)
 
     assert response.text == "42"
     assert response.result == 42
