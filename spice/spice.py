@@ -10,6 +10,8 @@ from json import JSONDecodeError
 from pathlib import Path
 from timeit import default_timer as timer
 from typing import Any, AsyncIterator, Callable, Collection, Dict, Generic, List, Optional, TypeVar, Union, cast
+from abc import ABC, abstractmethod
+from enum import Enum
 
 import httpx
 from jinja2 import DictLoader, Environment
@@ -94,9 +96,6 @@ class SpiceResponse(Generic[T]):
             return cast(T, self.text)
         return self._result
 
-
-from abc import ABC, abstractmethod
-from enum import Enum
 
 class Behavior(Enum):
     RETRY = "retry"
