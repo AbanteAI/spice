@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import io
 import mimetypes
+import time
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from pathlib import Path
@@ -120,7 +121,6 @@ class WrappedOpenAIClient(WrappedClient):
     @override
     @contextmanager
     def catch_and_convert_errors(self):
-        # TODO: Do we catch all errors? I think we should catch APIStatusError
         try:
             yield
         except openai.APIConnectionError as e:
@@ -398,7 +398,6 @@ class WrappedAnthropicClient(WrappedClient):
         except anthropic.APIStatusError as e:
             raise APIError(f"Anthropic Status Error: {e.message}") from e
 
-    # Anthropic doesn't give us a way to count tokens, so we just use OpenAI's token counting functions and multiply by a pre-determined multiplier
     class _FakeWrappedOpenAIClient(WrappedOpenAIClient):
         def __init__(self):
             pass
