@@ -230,6 +230,9 @@ class Spice:
         logging_dir: Optional[Path | str] = None,
         logging_callback: Optional[Callable[[SpiceResponse, str, str], None]] = None,
         default_temperature: Optional[float] = None,
+        max_retries: int = 0,  # Add this line
+        base_delay: float = 1.0,  # Add this line
+        max_delay: float = 32.0,  # Add this line
     ):
         """
         Creates a new Spice client.
@@ -267,6 +270,11 @@ class Spice:
             raise InvalidModelError("Default embeddings model must be an embeddings model")
         self._default_embeddings_model = embeddings_model
         self._default_temperature = default_temperature
+
+        # Initialize retry configuration parameters
+        self.max_retries = max_retries
+        self.base_delay = base_delay
+        self.max_delay = max_delay
 
         # TODO: Should we validate model aliases?
         self._model_aliases = model_aliases
@@ -451,7 +459,7 @@ class Spice:
             elif i > 1 and call_args.temperature is not None:
                 call_args.temperature = max(0.5, call_args.temperature)
 
-            with client.catch_and_convert_errors():
+            with client.catch_and_convert_errors(max_retries=self.max_retries, base_delay=self.base_delay, max_delay=self.max_delay):
                 if streaming_callback is not None:
                     stream = await client.get_chat_completion_or_stream(call_args)
                     stream = cast(AsyncIterator, stream)
