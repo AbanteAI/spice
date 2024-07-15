@@ -3,38 +3,27 @@ from __future__ import annotations
 import dataclasses
 import glob
 import json
-from abc import ABC, abstractmethod
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
 from json import JSONDecodeError
 from pathlib import Path
 from timeit import default_timer as timer
-from typing import Any, AsyncIterator, Callable, Collection, Dict, Generic, List, Optional, TypeVar, Union, cast
+from typing import Any, AsyncIterator, Callable, Collection, Dict, Generic, List, Optional, TypeVar, cast
 
 import httpx
 from jinja2 import DictLoader, Environment
 from openai.types.chat.completion_create_params import ResponseFormat
 
+from spice.call_args import SpiceCallArgs
 from spice.errors import InvalidModelError, UnknownModelError
 from spice.models import EmbeddingModel, Model, TextModel, TranscriptionModel, get_model_from_name
 from spice.providers import Provider, get_provider_from_name
-from spice.retry_strategy import DefaultRetryStrategy, RetryStrategy
+from spice.retry_strategy import Behavior, RetryStrategy
+from spice.retry_strategy.default_strategy import DefaultRetryStrategy
 from spice.spice_message import MessagesEncoder, SpiceMessage
 from spice.utils import embeddings_request_cost, string_identity, text_request_cost, transcription_request_cost
 from spice.wrapped_clients import WrappedClient
-
-
-@dataclass
-class SpiceCallArgs:
-    model: str
-    messages: Collection[SpiceMessage]
-    stream: bool = False
-    temperature: Optional[float] = None
-    max_tokens: Optional[int] = None
-    response_format: Optional[ResponseFormat] = None
-
 
 T = TypeVar("T")
 
@@ -449,17 +438,14 @@ class Spice:
 
         cost = 0
         attempt_number = 0
+        text_model = self._get_text_model(model)
+        call_args = self._fix_call_args(
+            messages, text_model, streaming_callback is not None, temperature, max_tokens, response_format
+        )
         while True:
             start_time = timer()
-            text_model = self._get_text_model(model)
+            text_model = self._get_text_model(call_args.model)
             client = self._get_client(text_model, provider)
-            call_args = self._fix_call_args(
-                messages, text_model, streaming_callback is not None, temperature, max_tokens, response_format
-            )
-            if attempt_number == 1 and call_args.temperature is not None:
-                call_args.temperature = max(0.2, call_args.temperature)
-            elif attempt_number > 1 and call_args.temperature is not None:
-                call_args.temperature = max(0.5, call_args.temperature)
 
             with client.catch_and_convert_errors():
                 if streaming_callback is not None:
@@ -484,26 +470,19 @@ class Spice:
                 self._total_cost += completion_cost
 
             end_time = timer()
-            if name:
-                retry_name = f"{name}-retry-{attempt_number}-fail"
-            else:
-                retry_name = f"retry-{attempt_number}-fail"
 
-            behavior, next_call_args, result = retry_strategy.decide(call_args, attempt_number, text)
+            behavior, next_call_args, result, call_name = retry_strategy.decide(
+                call_args, attempt_number, text, name or ""
+            )
+            response = SpiceResponse(
+                call_args, text, end_time - start_time, input_tokens, output_tokens, True, cost, _result=result
+            )
+            self._log_response(response, call_name)
             if behavior == Behavior.RETURN:
-                response = SpiceResponse(
-                    call_args, text, end_time - start_time, input_tokens, output_tokens, True, cost, _result=result
-                )
-                self._log_response(response, name)
                 return response
             else:
-                response = SpiceResponse(
-                    call_args, text, end_time - start_time, input_tokens, output_tokens, True, cost
-                )
-                self._log_response(response, retry_name)
                 attempt_number += 1
-
-        raise ValueError("Failed to get a valid response after all retries")
+                call_args = next_call_args
 
     async def stream_response(
         self,
