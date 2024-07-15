@@ -427,11 +427,10 @@ class Spice:
             streaming_callback: If given, will be called with the text of the response as it is received.
 
             retries: The number of times to retry getting a valid response. If 0, will not retry.
-            If after all retries no valid response is received, will raise a ValueError.
-            Will automatically raise the temperature to a minimum of 0.2 for the first retry
-            and 0.5 for any remaining retries.
 
             retry_strategy: The strategy to use for retrying the request. If None, a DefaultRetryStrategy will be used.
+            The strategy determines which model responses will be accepted and on an invalid response how the call_args
+            will be modified.
         """
         if retry_strategy is None:
             retry_strategy = DefaultRetryStrategy(validator, converter, retries)
