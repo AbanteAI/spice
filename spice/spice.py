@@ -390,7 +390,7 @@ class Spice:
         converter: Callable[[str], T] = string_identity,
         streaming_callback: Optional[Callable[[str], None]] = None,
         retries: int = 0,
-        retry_strategy: Optional[RetryStrategy] = None,
+        retry_strategy: Optional[RetryStrategy[T]] = None,
     ) -> SpiceResponse[T]:
         """
         Asynchronously retrieves a chat completion response.
