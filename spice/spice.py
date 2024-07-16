@@ -9,29 +9,21 @@ from datetime import datetime
 from json import JSONDecodeError
 from pathlib import Path
 from timeit import default_timer as timer
-from typing import Any, AsyncIterator, Callable, Collection, Dict, Generic, List, Optional, TypeVar, Union, cast
+from typing import Any, AsyncIterator, Callable, Collection, Dict, Generic, List, Optional, TypeVar, cast
 
 import httpx
 from jinja2 import DictLoader, Environment
 from openai.types.chat.completion_create_params import ResponseFormat
 
+from spice.call_args import SpiceCallArgs
 from spice.errors import InvalidModelError, UnknownModelError
 from spice.models import EmbeddingModel, Model, TextModel, TranscriptionModel, get_model_from_name
 from spice.providers import Provider, get_provider_from_name
+from spice.retry_strategy import Behavior, RetryStrategy
+from spice.retry_strategy.default_strategy import DefaultRetryStrategy
 from spice.spice_message import MessagesEncoder, SpiceMessage
 from spice.utils import embeddings_request_cost, string_identity, text_request_cost, transcription_request_cost
 from spice.wrapped_clients import WrappedClient
-
-
-@dataclass
-class SpiceCallArgs:
-    model: str
-    messages: Collection[SpiceMessage]
-    stream: bool = False
-    temperature: Optional[float] = None
-    max_tokens: Optional[int] = None
-    response_format: Optional[ResponseFormat] = None
-
 
 T = TypeVar("T")
 
@@ -398,6 +390,7 @@ class Spice:
         converter: Callable[[str], T] = string_identity,
         streaming_callback: Optional[Callable[[str], None]] = None,
         retries: int = 0,
+        retry_strategy: Optional[RetryStrategy] = None,
     ) -> SpiceResponse[T]:
         """
         Asynchronously retrieves a chat completion response.
@@ -434,22 +427,24 @@ class Spice:
             streaming_callback: If given, will be called with the text of the response as it is received.
 
             retries: The number of times to retry getting a valid response. If 0, will not retry.
-            If after all retries no valid response is received, will raise a ValueError.
-            Will automatically raise the temperature to a minimum of 0.2 for the first retry
-            and 0.5 for any remaining retries.
+
+            retry_strategy: The strategy to use for retrying the request. If None, a DefaultRetryStrategy will be used.
+            The strategy determines which model responses will be accepted and on an invalid response how the call_args
+            will be modified.
         """
+        if retry_strategy is None:
+            retry_strategy = DefaultRetryStrategy(validator, converter, retries)
+
         cost = 0
-        for i in range(retries + 1):
+        attempt_number = 0
+        text_model = self._get_text_model(model)
+        call_args = self._fix_call_args(
+            messages, text_model, streaming_callback is not None, temperature, max_tokens, response_format
+        )
+        while True:
             start_time = timer()
-            text_model = self._get_text_model(model)
+            text_model = self._get_text_model(call_args.model)
             client = self._get_client(text_model, provider)
-            call_args = self._fix_call_args(
-                messages, text_model, streaming_callback is not None, temperature, max_tokens, response_format
-            )
-            if i == 1 and call_args.temperature is not None:
-                call_args.temperature = max(0.2, call_args.temperature)
-            elif i > 1 and call_args.temperature is not None:
-                call_args.temperature = max(0.5, call_args.temperature)
 
             with client.catch_and_convert_errors():
                 if streaming_callback is not None:
@@ -464,7 +459,6 @@ class Spice:
                         chat_completion.input_tokens,
                         chat_completion.output_tokens,
                     )
-
                 else:
                     chat_completion = await client.get_chat_completion_or_stream(call_args)
                     text, input_tokens, output_tokens = client.extract_text_and_tokens(chat_completion, call_args)
@@ -475,32 +469,19 @@ class Spice:
                 self._total_cost += completion_cost
 
             end_time = timer()
-            if name:
-                retry_name = f"{name}-retry-{i}-fail"
-            else:
-                retry_name = f"retry-{i}-fail"
 
-            if validator is not None and not validator(text):
-                response = SpiceResponse(
-                    call_args, text, end_time - start_time, input_tokens, output_tokens, True, cost
-                )
-                self._log_response(response, retry_name)
-                continue
-            try:
-                result = converter(text)
-                response = SpiceResponse(
-                    call_args, text, end_time - start_time, input_tokens, output_tokens, True, cost, _result=result
-                )
-                self._log_response(response, name)
+            behavior, next_call_args, result, call_name = retry_strategy.decide(
+                call_args, attempt_number, text, name or ""
+            )
+            response = SpiceResponse(
+                call_args, text, end_time - start_time, input_tokens, output_tokens, True, cost, _result=result
+            )
+            self._log_response(response, call_name)
+            if behavior == Behavior.RETURN:
                 return response
-            except Exception as e:
-                response = SpiceResponse(
-                    call_args, text, end_time - start_time, input_tokens, output_tokens, True, cost
-                )
-                self._log_response(response, retry_name)
-                continue
-
-        raise ValueError("Failed to get a valid response after all retries")
+            else:
+                attempt_number += 1
+                call_args = next_call_args
 
     async def stream_response(
         self,

@@ -38,9 +38,12 @@ async def convert_string_to_asynciter(
 class WrappedTestClient(WrappedClient):
     """
     A wrapped client that can be used in tests. Accepts what it should respond with in its constructor.
+
+    Stores all calls to get_chat_completion_or_stream in the calls attribute for testing.
     """
 
     def __init__(self, response: str | Iterator[str]):
+        self.calls = list[SpiceCallArgs]()
         if isinstance(response, str):
             self.response = iter(response)
         else:
@@ -50,6 +53,7 @@ class WrappedTestClient(WrappedClient):
     async def get_chat_completion_or_stream(
         self, call_args: SpiceCallArgs
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk]:
+        self.calls.append(call_args)
         response = next(self.response)
 
         if call_args.stream:
