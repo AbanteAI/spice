@@ -223,7 +223,12 @@ class WrappedAnthropicClient(WrappedClient):
     ) -> Tuple[str, List[MessageParam]]:
         # Anthropic handles both images and system messages different from OpenAI, only allows alternating user / assistant messages,
         # and doesn't support tools / function calling (still in beta, and doesn't support streaming)
-        messages = [m for m in messages if m.get("content", "").strip()]
+        new_messages = []
+        for m in messages:
+            content = m.get("content", "")
+            if (not isinstance(content, str)) or content.strip():
+                new_messages.append(m)
+        messages = new_messages
 
         system = ""
         converted_messages: List[MessageParam] = []
