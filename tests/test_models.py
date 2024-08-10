@@ -1,5 +1,5 @@
-from spice.models import get_model_from_name, OPEN_AI
 import pytest
+from spice.models import get_model_from_name, OPEN_AI
 
 def test_gpt_4_0806_model():
     model = get_model_from_name("gpt-4-0806")
