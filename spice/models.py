@@ -112,6 +112,14 @@ GPT_4_32K = TextModel("gpt-4-32k", OPEN_AI, input_cost=6000, output_cost=12000, 
 
 GPT_4_32K_0613 = TextModel("gpt-4-32k-0613", OPEN_AI, input_cost=6000, output_cost=12000, context_length=32768)
 
+GPT_4_0806 = TextModel(
+    "gpt-4-0806",
+    OPEN_AI,
+    input_cost=300,  # Adjust this value to the correct input cost in cents / million tokens
+    output_cost=600,  # Adjust this value to the correct output cost in cents / million tokens
+    context_length=128000  # Adjust if the context length is different
+)
+
 GPT_35_TURBO = TextModel("gpt-3.5-turbo", OPEN_AI, input_cost=50, output_cost=150, context_length=16385)
 """Warning: This model always points to OpenAI's latest GPT-3.5-Turbo model, so the input and output costs may incorrect. We recommend using specific versions of GPT-3.5-Turbo instead."""
 

@@ -80,6 +80,7 @@ model_aliases = {
     "task1_model": GPT_4_0125_PREVIEW,
     "task2_model": "claude-3-opus-20240229",
     "task3_model": "claude-3-haiku-20240307",
+    "new_gpt4_model": "gpt-4-0806",  # New GPT-4-0806 model
 }
 
 client = Spice(model_aliases=model_aliases)
