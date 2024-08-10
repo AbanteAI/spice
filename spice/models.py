@@ -70,7 +70,7 @@ class UnknownModel(TextModel, EmbeddingModel, TranscriptionModel):
 
 
 GPT_4o = TextModel("gpt-4o", OPEN_AI, input_cost=500, output_cost=1500, context_length=128000)
-"""Warning: This model always points to OpenAI's latest GPT-4o model, so the input and output costs may incorrect. We recommend using specific versions of GPT-4o instead."""
+"""Warning: This model always points to OpenAI's latest GPT-4o model (currently gpt-4o-2024-05-13), so the input and output costs may be incorrect. We recommend using specific versions of GPT-4o instead."""
 
 GPT_4o_2024_05_13 = TextModel("gpt-4o-2024-05-13", OPEN_AI, input_cost=500, output_cost=1500, context_length=128000)
 
@@ -80,8 +80,14 @@ GPT_4o_mini_2024_07_18 = TextModel(
     "gpt-4o-mini-2024-07-18", OPEN_AI, input_cost=15, output_cost=60, context_length=128000
 )
 
-GPT_4o_2024_05_13 = TextModel("gpt-4o-2024-05-13", OPEN_AI, input_cost=500, output_cost=1500, context_length=128000)
-
+GPT_4o_2024_08_06 = TextModel(
+    "gpt-4o-2024-08-06",
+    OPEN_AI,
+    input_cost=250,  # Reduced from 500
+    output_cost=1000,  # Reduced from 1500
+    context_length=128000,
+)
+# Note: This model supports a max output of 16,384 tokens, which is larger than previous versions.
 
 GPT_4_TURBO = TextModel("gpt-4-turbo", OPEN_AI, input_cost=1000, output_cost=3000, context_length=128000)
 """Warning: This model always points to OpenAI's latest GPT-4-Turbo model, so the input and output costs may incorrect. We recommend using specific versions of GPT-4-Turbo instead."""
