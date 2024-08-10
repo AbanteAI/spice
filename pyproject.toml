@@ -18,7 +18,7 @@ description = "A Python library for building AI-powered applications."
 readme = "README.md"
 dependencies = [
     "python-dotenv",
-    "openai",
+    "openai==1.35.3",
     "anthropic",
     "pillow",
     "tiktoken",
