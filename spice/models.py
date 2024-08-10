@@ -81,11 +81,11 @@ GPT_4o_mini_2024_07_18 = TextModel(
 )
 
 GPT_4o_2024_08_06 = TextModel(
-    "gpt-4o-2024-08-06", 
-    OPEN_AI, 
+    "gpt-4o-2024-08-06",
+    OPEN_AI,
     input_cost=250,  # Reduced from 500
     output_cost=1000,  # Reduced from 1500
-    context_length=128000
+    context_length=128000,
 )
 # Note: This model supports a max output of 16,384 tokens, which is larger than previous versions.
 
