@@ -4,6 +4,8 @@ import sys
 from timeit import default_timer as timer
 from typing import List
 
+from spice.models import SONNET_3_5, GPT_4o_2024_08_06
+
 # Modify sys.path to ensure the script can run even when it's not part of the installed library.
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -18,11 +20,11 @@ async def speed_compare():
         {"role": "user", "content": "list 100 random words"},
     ]
 
-    models = ["gpt-4o-mini", "gpt-4o"]
-    runs = 5
+    models = [GPT_4o_2024_08_06, SONNET_3_5]
+    runs = 3
 
     for model in models:
-        print(f"Timing {model}:")
+        print(f"Timing {model.name}:")
         for i in range(runs):
             start = timer()
             response = await client.get_response(messages=messages, model=model)
