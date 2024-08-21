@@ -394,7 +394,7 @@ class WrappedAnthropicClient(WrappedClient):
     @override
     def extract_text_and_tokens(self, chat_completion, call_args: SpiceCallArgs):
         return (
-            ("{" if add_brace else "") + chat_completion.content[0].text,
+            chat_completion.content[0].text,
             chat_completion.usage.input_tokens,
             chat_completion.usage.output_tokens,
         )
