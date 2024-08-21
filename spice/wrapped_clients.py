@@ -107,6 +107,10 @@ class WrappedOpenAIClient(WrappedClient):
         if chunk.usage is not None:
             input_tokens = chunk.usage.prompt_tokens
             output_tokens = chunk.usage.completion_tokens
+        # Handle content filtering metadata
+        if hasattr(chunk, 'content_filter_results'):
+            content_filter_results = chunk.content_filter_results
+            # Process content filter results as needed
         return content, input_tokens, output_tokens
 
     @override
@@ -116,6 +120,10 @@ class WrappedOpenAIClient(WrappedClient):
             chat_completion.usage.prompt_tokens,
             chat_completion.usage.completion_tokens,
         )
+        # Handle content filtering metadata
+        if hasattr(chat_completion, 'content_filter_results'):
+            content_filter_results = chat_completion.content_filter_results
+            # Process content filter results as needed
 
     @override
     @contextmanager
@@ -381,10 +389,6 @@ class WrappedAnthropicClient(WrappedClient):
             input_tokens = chunk.message.usage.input_tokens
         elif chunk.type == "message_delta":
             output_tokens = chunk.usage.output_tokens
-        # Handle content filtering metadata
-        if hasattr(chunk, 'content_filter_results'):
-            content_filter_results = chunk.content_filter_results
-            # Process content filter results as needed
         return content, input_tokens, output_tokens
 
     @override
@@ -393,10 +397,6 @@ class WrappedAnthropicClient(WrappedClient):
         content = ("{" if add_brace else "") + chat_completion.content[0].text
         input_tokens = chat_completion.usage.input_tokens
         output_tokens = chat_completion.usage.output_tokens
-        # Handle content filtering metadata
-        if hasattr(chat_completion, 'content_filter_results'):
-            content_filter_results = chat_completion.content_filter_results
-            # Process content filter results as needed
         return content, input_tokens, output_tokens
 
     @override
