@@ -123,6 +123,8 @@ class StreamingSpiceResponse:
                 content = None
                 while content is None:
                     chunk = await anext(self._stream)
+                    if not chunk.choices:
+                        continue
                     content, input_tokens, output_tokens = self._client.process_chunk(chunk, self._call_args)
                     if input_tokens is not None:
                         self._input_tokens = input_tokens
