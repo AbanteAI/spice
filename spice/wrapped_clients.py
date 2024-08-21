@@ -393,11 +393,11 @@ class WrappedAnthropicClient(WrappedClient):
 
     @override
     def extract_text_and_tokens(self, chat_completion, call_args: SpiceCallArgs):
-        add_brace = call_args.response_format is not None and call_args.response_format.get("type") == "json_object"
-        content = ("{" if add_brace else "") + chat_completion.content[0].text
-        input_tokens = chat_completion.usage.input_tokens
-        output_tokens = chat_completion.usage.output_tokens
-        return content, input_tokens, output_tokens
+        return (
+            ("{" if add_brace else "") + chat_completion.content[0].text,
+            chat_completion.usage.input_tokens,
+            chat_completion.usage.output_tokens,
+        )
 
     @override
     @contextmanager
