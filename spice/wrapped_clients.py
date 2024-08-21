@@ -381,16 +381,23 @@ class WrappedAnthropicClient(WrappedClient):
             input_tokens = chunk.message.usage.input_tokens
         elif chunk.type == "message_delta":
             output_tokens = chunk.usage.output_tokens
+        # Handle content filtering metadata
+        if hasattr(chunk, 'content_filter_results'):
+            content_filter_results = chunk.content_filter_results
+            # Process content filter results as needed
         return content, input_tokens, output_tokens
 
     @override
     def extract_text_and_tokens(self, chat_completion, call_args: SpiceCallArgs):
         add_brace = call_args.response_format is not None and call_args.response_format.get("type") == "json_object"
-        return (
-            ("{" if add_brace else "") + chat_completion.content[0].text,
-            chat_completion.usage.input_tokens,
-            chat_completion.usage.output_tokens,
-        )
+        content = ("{" if add_brace else "") + chat_completion.content[0].text
+        input_tokens = chat_completion.usage.input_tokens
+        output_tokens = chat_completion.usage.output_tokens
+        # Handle content filtering metadata
+        if hasattr(chat_completion, 'content_filter_results'):
+            content_filter_results = chat_completion.content_filter_results
+            # Process content filter results as needed
+        return content, input_tokens, output_tokens
 
     @override
     @contextmanager
