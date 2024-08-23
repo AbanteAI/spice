@@ -213,6 +213,14 @@ class WrappedAzureClient(WrappedOpenAIClient):
             azure_endpoint=endpoint,
         )
 
+    @override
+    def process_chunk(self, chunk, call_args: SpiceCallArgs):
+        # In Azure, the first chunk only contains moderation metadata, and an empty choices array
+        if not chunk.choices:
+            return None, None, None
+        else:
+            return super().process_chunk(chunk, call_args)
+
 
 class WrappedAnthropicClient(WrappedClient):
     def __init__(self, key):
