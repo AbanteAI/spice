@@ -25,7 +25,9 @@ SpiceMessage = ChatCompletionMessageParam
 VALID_MIMETYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"]
 
 
-def create_message(role: Literal["user", "assistant", "system"], content: str, cache: bool = False) -> ChatCompletionMessageParam:
+def create_message(
+    role: Literal["user", "assistant", "system"], content: str, cache: bool = False
+) -> ChatCompletionMessageParam:
     message = {"role": role, "content": content}
     if cache:
         message["cache_control"] = {"type": "ephemeral"}
@@ -47,15 +49,21 @@ def assistant_message(content: str, cache: bool = False) -> ChatCompletionAssist
     return create_message("assistant", content, cache)
 
 
-def image_bytes_message(image_bytes: bytes, media_type: str) -> ChatCompletionUserMessageParam:
+def image_bytes_message(
+    image_bytes: bytes, media_type: str
+) -> ChatCompletionUserMessageParam:
     """Creates a user message containing the given image bytes."""
     if media_type not in VALID_MIMETYPES:
-        raise ImageError(f"Invalid image type {media_type}: Image must be a png, jpg, gif, or webp image.")
+        raise ImageError(
+            f"Invalid image type {media_type}: Image must be a png, jpg, gif, or webp image."
+        )
 
     image = base64.b64encode(image_bytes).decode("utf-8")
     return {
         "role": "user",
-        "content": [{"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{image}"}}],
+        "content": [
+            {"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{image}"}}
+        ],
     }
 
 
@@ -68,7 +76,9 @@ def file_image_message(file_path: Path | str) -> ChatCompletionUserMessageParam:
 
     media_type = mimetypes.guess_type(file_path)[0]
     if media_type not in VALID_MIMETYPES:
-        raise ImageError(f"Invalid image at {file_path}: Image must be a png, jpg, gif, or webp image.")
+        raise ImageError(
+            f"Invalid image at {file_path}: Image must be a png, jpg, gif, or webp image."
+        )
 
     with file_path.open("rb") as file:
         image_bytes = file.read()
@@ -115,11 +125,15 @@ class SpiceMessages(UserList[SpiceMessage]):
     A light wrapper around the messages list simplifing adding new messages.
     """
 
-    def __init__(self, client: Spice, initlist: Optional[Iterable[SpiceMessage]] = None):
+    def __init__(
+        self, client: Spice, initlist: Optional[Iterable[SpiceMessage]] = None
+    ):
         self._client = client
         super().__init__(initlist)
 
-    def add_message(self, role: Literal["user", "assistant", "system"], content: str, cache: bool = False):
+    def add_message(
+        self, role: Literal["user", "assistant", "system"], content: str, cache: bool = False
+    ):
         self.data.append(create_message(role, content, cache))
 
     def add_user_message(self, content: str, cache: bool = False):
@@ -137,6 +151,7 @@ class SpiceMessages(UserList[SpiceMessage]):
     def add_image_bytes_message(self, image_bytes: bytes, media_type: str):
         """Appends a user message with the given image bytes."""
         self.data.append(image_bytes_message(image_bytes, media_type))
+
     def add_file_image_message(self, file_path: Path | str):
         """Appends a user message with the image from the given file. The image must be a png, jpg, gif, or webp image."""
         self.data.append(file_image_message(file_path))
@@ -145,7 +160,9 @@ class SpiceMessages(UserList[SpiceMessage]):
         """Appends a user message with the image from the given url."""
         self.data.append(http_image_message(url))
 
-    def add_prompt(self, role: Literal["user", "assistant", "system"], name: str, **context: Any):
+    def add_prompt(
+        self, role: Literal["user", "assistant", "system"], name: str, **context: Any
+    ):
         prompt = self._client.get_prompt(name)
         rendered_prompt = self._client.get_rendered_prompt(name, **context)
         message = _MetadataDict(create_message(role, rendered_prompt))
