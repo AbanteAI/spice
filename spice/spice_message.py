@@ -25,23 +25,26 @@ SpiceMessage = ChatCompletionMessageParam
 VALID_MIMETYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"]
 
 
-def create_message(role: Literal["user", "assistant", "system"], content: str) -> ChatCompletionMessageParam:
-    return {"role": role, "content": content}  # pyright: ignore
+def create_message(role: Literal["user", "assistant", "system"], content: str, cache: bool = False) -> ChatCompletionMessageParam:
+    message = {"role": role, "content": content}
+    if cache:
+        message["cache_control"] = {"type": "ephemeral"}
+    return message  # pyright: ignore
 
 
-def user_message(content: str) -> ChatCompletionUserMessageParam:
+def user_message(content: str, cache: bool = False) -> ChatCompletionUserMessageParam:
     """Creates a user message with the given content."""
-    return {"role": "user", "content": content}
+    return create_message("user", content, cache)
 
 
-def system_message(content: str) -> ChatCompletionSystemMessageParam:
+def system_message(content: str, cache: bool = False) -> ChatCompletionSystemMessageParam:
     """Creates a system message with the given content."""
-    return {"role": "system", "content": content}
+    return create_message("system", content, cache)
 
 
-def assistant_message(content: str) -> ChatCompletionAssistantMessageParam:
+def assistant_message(content: str, cache: bool = False) -> ChatCompletionAssistantMessageParam:
     """Creates an assistant message with the given content."""
-    return {"role": "assistant", "content": content}
+    return create_message("assistant", content, cache)
 
 
 def image_bytes_message(image_bytes: bytes, media_type: str) -> ChatCompletionUserMessageParam:
@@ -116,25 +119,24 @@ class SpiceMessages(UserList[SpiceMessage]):
         self._client = client
         super().__init__(initlist)
 
-    def add_message(self, role: Literal["user", "assistant", "system"], content: str):
-        self.data.append(create_message(role, content))
+    def add_message(self, role: Literal["user", "assistant", "system"], content: str, cache: bool = False):
+        self.data.append(create_message(role, content, cache))
 
-    def add_user_message(self, content: str):
+    def add_user_message(self, content: str, cache: bool = False):
         """Appends a user message with the given content."""
-        self.data.append(user_message(content))
+        self.data.append(user_message(content, cache))
 
-    def add_system_message(self, content: str):
+    def add_system_message(self, content: str, cache: bool = False):
         """Appends a system message with the given content."""
-        self.data.append(system_message(content))
+        self.data.append(system_message(content, cache))
 
-    def add_assistant_message(self, content: str):
+    def add_assistant_message(self, content: str, cache: bool = False):
         """Appends an assistant message with the given content."""
-        self.data.append(assistant_message(content))
+        self.data.append(assistant_message(content, cache))
 
     def add_image_bytes_message(self, image_bytes: bytes, media_type: str):
         """Appends a user message with the given image bytes."""
         self.data.append(image_bytes_message(image_bytes, media_type))
-
     def add_file_image_message(self, file_path: Path | str):
         """Appends a user message with the image from the given file. The image must be a png, jpg, gif, or webp image."""
         self.data.append(file_image_message(file_path))

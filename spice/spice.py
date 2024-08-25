@@ -375,6 +375,7 @@ class Spice:
             temperature=self._default_temperature if temperature is None else temperature,
             max_tokens=max_tokens,
             response_format=response_format,
+            cache_control=cache_control,  # New parameter
         )
 
     async def get_response(
@@ -391,6 +392,7 @@ class Spice:
         streaming_callback: Optional[Callable[[str], None]] = None,
         retries: int = 0,
         retry_strategy: Optional[RetryStrategy[T]] = None,
+        cache_control: Optional[Dict[str, Any]] = None,  # New parameter
     ) -> SpiceResponse[T]:
         """
         Asynchronously retrieves a chat completion response.
@@ -445,7 +447,6 @@ class Spice:
             start_time = timer()
             text_model = self._get_text_model(call_args.model)
             client = self._get_client(text_model, provider)
-
             with client.catch_and_convert_errors():
                 if streaming_callback is not None:
                     stream = await client.get_chat_completion_or_stream(call_args)
@@ -463,11 +464,16 @@ class Spice:
                     chat_completion = await client.get_chat_completion_or_stream(call_args)
                     text, input_tokens, output_tokens = client.extract_text_and_tokens(chat_completion, call_args)
 
+            # Handle cache performance metrics
+            cache_creation_input_tokens = chat_completion.usage.get("cache_creation_input_tokens", 0)
+            cache_read_input_tokens = chat_completion.usage.get("cache_read_input_tokens", 0)
+            print(f"Cache creation input tokens: {cache_creation_input_tokens}")
+            print(f"Cache read input tokens: {cache_read_input_tokens}")
+
             completion_cost = text_request_cost(text_model, input_tokens, output_tokens)
             if completion_cost is not None:
                 cost += completion_cost
                 self._total_cost += completion_cost
-
             end_time = timer()
 
             behavior, next_call_args, result, call_name = retry_strategy.decide(
