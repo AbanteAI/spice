@@ -21,6 +21,21 @@ async def basic_example():
     print(response.text)
 
 
+async def messages_example():
+    client = Spice()
+
+    # message convienence functions
+    messages = (
+        client.new_messages()
+        .add_system_message("You are a helpful assistant.")
+        .add_user_message("list 5 random species of birds")
+    )
+
+    response = await client.get_response(messages=messages, model="gpt-4o")
+
+    print(response.text)
+
+
 async def streaming_example():
     # You can set a default model for the client instead of passing it with each call
     client = Spice(default_text_model="claude-3-opus-20240229")
@@ -120,9 +135,11 @@ async def vision_example():
     print(response.text)
 
     # Alternatively, you can use the SpiceMessages wrapper to easily create your prompts
-    spice_messages: SpiceMessages = SpiceMessages(client)
-    spice_messages.add_user_message("What do you see?")
-    spice_messages.add_file_image_message("~/.mentat/picture.png")
+    spice_messages: SpiceMessages = (
+        SpiceMessages(client)
+        .add_file_image_message("~/.mentat/picture.png")
+        .add_user_message("What do you see? Describe the objects, colors, and style.")
+    )
     response = await client.get_response(spice_messages, CLAUDE_3_OPUS_20240229)
     print(response.text)
 
@@ -155,4 +172,5 @@ async def run_all_examples():
 
 
 if __name__ == "__main__":
-    asyncio.run(run_all_examples())
+    asyncio.run(messages_example())
+    # asyncio.run(run_all_examples())

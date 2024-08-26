@@ -21,7 +21,7 @@ from spice.models import EmbeddingModel, Model, TextModel, TranscriptionModel, g
 from spice.providers import Provider, get_provider_from_name
 from spice.retry_strategy import Behavior, RetryStrategy
 from spice.retry_strategy.default_strategy import DefaultRetryStrategy
-from spice.spice_message import MessagesEncoder, SpiceMessage
+from spice.spice_message import MessagesEncoder, SpiceMessage, SpiceMessages
 from spice.utils import embeddings_request_cost, string_identity, text_request_cost, transcription_request_cost
 from spice.wrapped_clients import WrappedClient
 
@@ -269,6 +269,12 @@ class Spice:
         self.logging_dir = None if logging_dir is None else Path(logging_dir).expanduser()
         self.logging_callback = logging_callback
         self.new_run("spice")
+
+    def new_messages(self) -> SpiceMessages:
+        """
+        Returns a new SpiceMessages object.
+        """
+        return SpiceMessages(self)
 
     def new_run(self, name: str):
         """

@@ -112,63 +112,74 @@ class SpiceMessages(UserList[SpiceMessage]):
         self._client = client
         super().__init__(initlist)
 
-    def add_message(self, role: Literal["user", "assistant", "system"], content: str):
+    def add_message(self, role: Literal["user", "assistant", "system"], content: str) -> SpiceMessages:
         self.data.append(create_message(role, content))
+        return self
 
-    def add_user_message(self, content: str):
+    def add_user_message(self, content: str) -> SpiceMessages:
         """Appends a user message with the given content."""
         self.data.append(user_message(content))
+        return self
 
-    def add_system_message(self, content: str):
+    def add_system_message(self, content: str) -> SpiceMessages:
         """Appends a system message with the given content."""
         self.data.append(system_message(content))
+        return self
 
-    def add_assistant_message(self, content: str):
+    def add_assistant_message(self, content: str) -> SpiceMessages:
         """Appends an assistant message with the given content."""
         self.data.append(assistant_message(content))
+        return self
 
-    def add_image_bytes_message(self, image_bytes: bytes, media_type: str):
+    def add_image_bytes_message(self, image_bytes: bytes, media_type: str) -> SpiceMessages:
         """Appends a user message with the given image bytes."""
         self.data.append(image_bytes_message(image_bytes, media_type))
+        return self
 
-    def add_file_image_message(self, file_path: Path | str):
+    def add_file_image_message(self, file_path: Path | str) -> SpiceMessages:
         """Appends a user message with the image from the given file. The image must be a png, jpg, gif, or webp image."""
         self.data.append(file_image_message(file_path))
+        return self
 
-    def add_http_image_message(self, url: str):
+    def add_http_image_message(self, url: str) -> SpiceMessages:
         """Appends a user message with the image from the given url."""
         self.data.append(http_image_message(url))
+        return self
 
-    def add_prompt(self, role: Literal["user", "assistant", "system"], name: str, **context: Any):
+    def add_prompt(self, role: Literal["user", "assistant", "system"], name: str, **context: Any) -> SpiceMessages:
         prompt = self._client.get_prompt(name)
         rendered_prompt = self._client.get_rendered_prompt(name, **context)
         message = _MetadataDict(create_message(role, rendered_prompt))
         message.prompt_metadata = {"name": name, "content": prompt, "context": context}
         self.data.append(message)  # pyright: ignore
+        return self
 
-    def add_user_prompt(self, name: str, **context: Any):
+    def add_user_prompt(self, name: str, **context: Any) -> SpiceMessages:
         """Appends a user message with the given pre-loaded prompt using jinja to render the context."""
         prompt = self._client.get_prompt(name)
         rendered_prompt = self._client.get_rendered_prompt(name, **context)
         message = _MetadataDict(user_message(rendered_prompt))
         message.prompt_metadata = {"name": name, "content": prompt, "context": context}
         self.data.append(message)  # pyright: ignore
+        return self
 
-    def add_system_prompt(self, name: str, **context: Any):
+    def add_system_prompt(self, name: str, **context: Any) -> SpiceMessages:
         """Appends a system message with the given pre-loaded prompt using jinja to render the context."""
         prompt = self._client.get_prompt(name)
         rendered_prompt = self._client.get_rendered_prompt(name, **context)
         message = _MetadataDict(system_message(rendered_prompt))
         message.prompt_metadata = {"name": name, "content": prompt, "context": context}
         self.data.append(message)  # pyright: ignore
+        return self
 
-    def add_assistant_prompt(self, name: str, **context: Any):
+    def add_assistant_prompt(self, name: str, **context: Any) -> SpiceMessages:
         """Appends a assistant message with the given pre-loaded prompt using jinja to render the context."""
         prompt = self._client.get_prompt(name)
         rendered_prompt = self._client.get_rendered_prompt(name, **context)
         message = _MetadataDict(assistant_message(rendered_prompt))
         message.prompt_metadata = {"name": name, "content": prompt, "context": context}
         self.data.append(message)  # pyright: ignore
+        return self
 
     # Because the constructor has the client as an argument we have to redefine these methods from UserList
     def __getitem__(self, i):  # pyright: ignore
