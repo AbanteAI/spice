@@ -14,10 +14,11 @@ from spice import Spice
 async def speed_compare():
     client = Spice()
 
-    messages = [
-        {"role": "system", "content": "You are a helpful assistant."},
-        {"role": "user", "content": "list 100 random words"},
-    ]
+    messages = (
+        client.new_messages()
+        .add_system_message("You are a helpful assistant.")
+        .add_user_message("list 100 random words")
+    )
 
     models = [GPT_4o_2024_08_06, SONNET_3_5]
     runs = 3
