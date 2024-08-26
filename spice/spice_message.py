@@ -5,58 +5,54 @@ import mimetypes
 from collections import UserList
 from json import JSONEncoder
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, Iterable, Literal, Optional, TypedDict
+from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Literal, Optional, TypedDict, Union
 
-from openai.types.chat import (
-    ChatCompletionAssistantMessageParam,
-    ChatCompletionMessageParam,
-    ChatCompletionSystemMessageParam,
-    ChatCompletionUserMessageParam,
-)
+from pydantic import BaseModel
 
 from spice.errors import ImageError
 
 if TYPE_CHECKING:
     from spice.spice import Spice
 
-SpiceMessage = ChatCompletionMessageParam
-"""The message format Spice uses and accepts. Exactly the same as OpenAI's message format."""
-
 VALID_MIMETYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"]
 
 
-def create_message(role: Literal["user", "assistant", "system"], content: str) -> ChatCompletionMessageParam:
-    return {"role": role, "content": content}  # pyright: ignore
+class SpiceMessage(BaseModel):
+    role: Literal["user", "assistant", "system"]
+    content: Union[str, List[Dict[str, Any]]]
 
 
-def user_message(content: str) -> ChatCompletionUserMessageParam:
+def create_message(role: Literal["user", "assistant", "system"], content: str) -> SpiceMessage:
+    return SpiceMessage(role=role, content=content)
+
+
+def user_message(content: str) -> SpiceMessage:
     """Creates a user message with the given content."""
-    return {"role": "user", "content": content}
+    return SpiceMessage(role="user", content=content)
 
 
-def system_message(content: str) -> ChatCompletionSystemMessageParam:
+def system_message(content: str) -> SpiceMessage:
     """Creates a system message with the given content."""
-    return {"role": "system", "content": content}
+    return SpiceMessage(role="system", content=content)
 
 
-def assistant_message(content: str) -> ChatCompletionAssistantMessageParam:
+def assistant_message(content: str) -> SpiceMessage:
     """Creates an assistant message with the given content."""
-    return {"role": "assistant", "content": content}
+    return SpiceMessage(role="assistant", content=content)
 
 
-def image_bytes_message(image_bytes: bytes, media_type: str) -> ChatCompletionUserMessageParam:
+def image_bytes_message(image_bytes: bytes, media_type: str) -> SpiceMessage:
     """Creates a user message containing the given image bytes."""
     if media_type not in VALID_MIMETYPES:
         raise ImageError(f"Invalid image type {media_type}: Image must be a png, jpg, gif, or webp image.")
 
     image = base64.b64encode(image_bytes).decode("utf-8")
-    return {
-        "role": "user",
-        "content": [{"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{image}"}}],
-    }
+    return SpiceMessage(
+        role="user", content=[{"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{image}"}}]
+    )
 
 
-def file_image_message(file_path: Path | str) -> ChatCompletionUserMessageParam:
+def file_image_message(file_path: Path | str) -> SpiceMessage:
     """Creates a user message with the image at the given path. The image must be a png, jpg, gif, or webp image."""
 
     file_path = Path(file_path).expanduser().resolve()
@@ -73,12 +69,12 @@ def file_image_message(file_path: Path | str) -> ChatCompletionUserMessageParam:
     return image_bytes_message(image_bytes, media_type)
 
 
-def http_image_message(url: str) -> ChatCompletionUserMessageParam:
+def http_image_message(url: str) -> SpiceMessage:
     """Creates a user message with an image from the given url."""
     if not (url.startswith("http://") or url.startswith("https://")):
         raise ImageError(f"Invalid image URL {url}: Must be http or https protocol.")
 
-    return {"role": "user", "content": [{"type": "image_url", "image_url": {"url": url}}]}
+    return SpiceMessage(role="user", content=[{"type": "image_url", "image_url": {"url": url}}])
 
 
 class MessagesEncoder(JSONEncoder):

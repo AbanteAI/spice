@@ -15,7 +15,7 @@ import tiktoken
 from anthropic import AsyncAnthropic
 from anthropic.types import Message, MessageParam, MessageStreamEvent, TextBlockParam
 from openai import AsyncAzureOpenAI, AsyncOpenAI, OpenAI
-from openai.types.chat import ChatCompletion, ChatCompletionChunk
+from openai.types.chat import ChatCompletion, ChatCompletionChunk, ChatCompletionMessageParam
 from PIL import Image
 from typing_extensions import override
 
@@ -72,6 +72,15 @@ class WrappedOpenAIClient(WrappedClient):
         self._sync_client = OpenAI(api_key=key, base_url=base_url)
         self._client = AsyncOpenAI(api_key=key, base_url=base_url)
 
+    def _convert_messages(self, messages: Collection[SpiceMessage]) -> List[ChatCompletionMessageParam]:
+        converted_messages = []
+
+        for message in messages:
+            # convert to dict and drop cache bool as that's just for anthropic
+            converted_messages.append({"role": message.role, "content": message.content})
+
+        return converted_messages
+
     @override
     async def get_chat_completion_or_stream(self, call_args: SpiceCallArgs):
         # WrappedOpenAIClient can be used with a proxy to a non openai llm, which may not support response_format
@@ -81,15 +90,17 @@ class WrappedOpenAIClient(WrappedClient):
         if call_args.stream:
             maybe_kwargs["stream_options"] = {"include_usage": True}
 
-        # GPT-4-vision has low default max_tokens
-        if call_args.max_tokens is None and "gpt-4" in call_args.model and "vision-preview" in call_args.model:
+        # If using vision you have to set max_tokens or api errors
+        if call_args.max_tokens is None and "gpt-4" in call_args.model:
             max_tokens = 4096
         else:
             max_tokens = call_args.max_tokens
 
+        converted_messages = self._convert_messages(call_args.messages)
+
         return await self._client.chat.completions.create(
             model=call_args.model,
-            messages=list(call_args.messages),
+            messages=converted_messages,
             stream=call_args.stream,
             temperature=call_args.temperature,
             max_tokens=max_tokens,
@@ -156,26 +167,24 @@ class WrappedOpenAIClient(WrappedClient):
             # every message follows <|start|>{role/name}\n{content}<|end|>\n
             # this has 5 tokens (start token, role, \n, end token, \n), but we count the role token later
             num_tokens += 4
-            for key, value in message.items():
-                if isinstance(value, list) and key == "content":
-                    for entry in value:
-                        if entry["type"] == "text":
-                            num_tokens += len(encoding.encode(entry["text"]))
-                        if entry["type"] == "image_url":
-                            image_base64: str = entry["image_url"]["url"].split(",")[1]
-                            image_bytes: bytes = base64.b64decode(image_base64)
-                            image = Image.open(io.BytesIO(image_bytes))
-                            size = image.size
-                            # As described here: https://platform.openai.com/docs/guides/vision/calculating-costs
-                            scale = min(1, 2048 / max(size))
-                            size = (int(size[0] * scale), int(size[1] * scale))
-                            scale = min(1, 768 / min(size))
-                            size = (int(size[0] * scale), int(size[1] * scale))
-                            num_tokens += 85 + 170 * ((size[0] + 511) // 512) * ((size[1] + 511) // 512)
-                elif isinstance(value, str):
-                    num_tokens += len(encoding.encode(value))
-                if key == "name":  # if there's a name, the role is omitted
-                    num_tokens -= 1  # role is always required and always 1 token
+            content = message.content
+            if isinstance(content, list):
+                for entry in content:
+                    if entry["type"] == "text":
+                        num_tokens += len(encoding.encode(entry["text"]))
+                    if entry["type"] == "image_url":
+                        image_base64: str = entry["image_url"]["url"].split(",")[1]
+                        image_bytes: bytes = base64.b64decode(image_base64)
+                        image = Image.open(io.BytesIO(image_bytes))
+                        size = image.size
+                        # As described here: https://platform.openai.com/docs/guides/vision/calculating-costs
+                        scale = min(1, 2048 / max(size))
+                        size = (int(size[0] * scale), int(size[1] * scale))
+                        scale = min(1, 768 / min(size))
+                        size = (int(size[0] * scale), int(size[1] * scale))
+                        num_tokens += 85 + 170 * ((size[0] + 511) // 512) * ((size[1] + 511) // 512)
+            elif isinstance(content, str):
+                num_tokens += len(encoding.encode(content))
         num_tokens += 2  # every reply is primed with <|start|>assistant
         return num_tokens
 
@@ -231,26 +240,19 @@ class WrappedAnthropicClient(WrappedClient):
     ) -> Tuple[str, List[MessageParam]]:
         # Anthropic handles both images and system messages different from OpenAI, only allows alternating user / assistant messages,
         # and doesn't support tools / function calling (still in beta, and doesn't support streaming)
-        new_messages = []
-        for m in messages:
-            content = m.get("content", "")
-            if (not isinstance(content, str)) or content.strip():
-                new_messages.append(m)
-        messages = new_messages
-
         system = ""
         converted_messages: List[MessageParam] = []
         start = True
         cur_role = ""
         for message in messages:
-            if message["role"] == "system" and start:
+            if message.role == "system" and start:
                 if system:
                     system += "\n\n"
-                system += message["content"]
+                system += message.content  # pyright: ignore
                 continue
 
             # First message must be user, and text content cannot be empty / whitespace only
-            if start and message["role"] != "user":
+            if start and message.role != "user":
                 cur_role = "user"
                 converted_messages.append({"role": "user", "content": [{"type": "text", "text": "-"}]})
 
@@ -258,38 +260,38 @@ class WrappedAnthropicClient(WrappedClient):
 
             # Anthropic messages can either be a string or list of objects; since user messages can have images, they should always be a list objects.
             # Assistant messages should always be strings to keep them simple.
-            match message["role"]:
+            match message.role:
                 case "system":
                     if cur_role == "user":
-                        message_object: TextBlockParam = {"type": "text", "text": f"\n\nSystem:\n{message['content']}"}
+                        message_object: TextBlockParam = {"type": "text", "text": f"\n\nSystem:\n{message.content}"}
                         converted_messages[-1]["content"].append(message_object)  # pyright: ignore
                     else:
                         cur_role = "user"
-                        message_object: TextBlockParam = {"type": "text", "text": f"System:\n{message['content']}"}
+                        message_object: TextBlockParam = {"type": "text", "text": f"System:\n{message.content}"}
                         converted_messages.append({"role": "user", "content": [message_object]})
                 case "assistant":
-                    content = message.get("content", "")
+                    content = message.content
                     if content is None:
                         content = ""
                     if cur_role == "assistant":
                         converted_messages[-1]["content"] += f"\n\n{content}"  # pyright: ignore
                     else:
                         cur_role = "assistant"
-                        converted_messages.append({"role": "assistant", "content": content})
+                        converted_messages.append({"role": "assistant", "content": content})  # pyright: ignore
                 case "user":
-                    if isinstance(message["content"], str):
+                    if isinstance(message.content, str):
                         if cur_role == "user":
                             converted_messages[-1]["content"].append(  # pyright: ignore
-                                {"type": "text", "text": f"\n\n{message['content']}"}
+                                {"type": "text", "text": f"\n\n{message.content}"}
                             )
                         else:
                             converted_messages.append(
-                                {"role": "user", "content": [{"type": "text", "text": f"{message['content']}"}]}
+                                {"role": "user", "content": [{"type": "text", "text": f"{message.content}"}]}
                             )
                     else:
                         first = cur_role == "user"
                         content = []
-                        for sub_content in message["content"]:
+                        for sub_content in message.content:
                             if sub_content["type"] == "text":
                                 content.append(
                                     {"type": "text", "text": ("\n\n" if first else "") + sub_content["text"]}

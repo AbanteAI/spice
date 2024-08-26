@@ -7,13 +7,12 @@ from typing import List
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from spice import Spice
-from spice.spice_message import SpiceMessage
 
 
 async def basic_example():
     client = Spice()
 
-    messages: List[SpiceMessage] = [
+    messages = [
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "list 5 random words"},
     ]
@@ -30,8 +29,8 @@ async def streaming_example():
     client.load_prompt("scripts/prompt.txt", name="my prompt")
 
     # Spice can also automatically render Jinja templates.
-    messages: List[SpiceMessage] = [
-        {"role": "system", "content": client.get_rendered_prompt("my prompt", assistant_name="Ryan Reynolds")},
+    messages = [
+        {"role": "system", "content": client.get_rendered_prompt("my prompt", assistant_name="Friendly Robot")},
         {"role": "user", "content": "list 5 random words"},
     ]
     stream = await client.stream_response(messages=messages)
@@ -62,7 +61,7 @@ async def multiple_providers_example():
 
     client = Spice(model_aliases=model_aliases)
 
-    messages: List[SpiceMessage] = [
+    messages = [
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "list 5 random words"},
     ]
@@ -86,7 +85,7 @@ async def multiple_providers_example():
 async def azure_example():
     client = Spice()
 
-    messages: List[SpiceMessage] = [
+    messages = [
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "list 5 random words"},
     ]
@@ -113,11 +112,11 @@ async def vision_example():
 
     # Spice makes it easy to add images from files or the internet
     from spice import SpiceMessage, SpiceMessages
-    from spice.models import CLAUDE_3_OPUS_20240229, GPT_4_1106_VISION_PREVIEW
+    from spice.models import CLAUDE_3_OPUS_20240229, GPT_4o
     from spice.spice_message import file_image_message, user_message
 
     messages: List[SpiceMessage] = [user_message("What do you see?"), file_image_message("~/.mentat/picture.png")]
-    response = await client.get_response(messages, GPT_4_1106_VISION_PREVIEW)
+    response = await client.get_response(messages, GPT_4o)
     print(response.text)
 
     # Alternatively, you can use the SpiceMessages wrapper to easily create your prompts

@@ -9,7 +9,7 @@ from datetime import datetime
 from json import JSONDecodeError
 from pathlib import Path
 from timeit import default_timer as timer
-from typing import Any, AsyncIterator, Callable, Collection, Dict, Generic, List, Optional, TypeVar, cast
+from typing import Any, AsyncIterator, Callable, Collection, Dict, Generic, List, Optional, TypeVar, Union, cast
 
 import httpx
 from jinja2 import DictLoader, Environment
@@ -379,7 +379,7 @@ class Spice:
 
     async def get_response(
         self,
-        messages: Collection[SpiceMessage],
+        messages: Collection[Union[SpiceMessage, Dict[str, Any]]],
         model: Optional[TextModel | str] = None,
         provider: Optional[Provider | str] = None,
         temperature: Optional[float] = None,
@@ -432,6 +432,8 @@ class Spice:
             The strategy determines which model responses will be accepted and on an invalid response how the call_args
             will be modified.
         """
+        messages = [SpiceMessage(**message) if isinstance(message, dict) else message for message in messages]
+
         if retry_strategy is None:
             retry_strategy = DefaultRetryStrategy(validator, converter, retries)
 
@@ -485,7 +487,7 @@ class Spice:
 
     async def stream_response(
         self,
-        messages: Collection[SpiceMessage],
+        messages: Collection[Union[SpiceMessage, Dict[str, Any]]],
         model: Optional[TextModel | str] = None,
         provider: Optional[Provider | str] = None,
         temperature: Optional[float] = None,
@@ -518,6 +520,7 @@ class Spice:
 
             name: If given, will be given this name when logged.
         """
+        messages = [SpiceMessage(**message) if isinstance(message, dict) else message for message in messages]
 
         text_model = self._get_text_model(model)
         client = self._get_client(text_model, provider)

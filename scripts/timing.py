@@ -2,20 +2,19 @@ import asyncio
 import os
 import sys
 from timeit import default_timer as timer
-from typing import List
 
 from spice.models import SONNET_3_5, GPT_4o_2024_08_06
 
 # Modify sys.path to ensure the script can run even when it's not part of the installed library.
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from spice import Spice, SpiceMessage
+from spice import Spice
 
 
 async def speed_compare():
     client = Spice()
 
-    messages: List[SpiceMessage] = [
+    messages = [
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "list 100 random words"},
     ]
