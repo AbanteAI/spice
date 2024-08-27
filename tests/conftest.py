@@ -94,6 +94,8 @@ class WrappedTestClient(WrappedClient):
         return TextAndTokens(
             text=chunk.choices[0].delta.content or "",
             input_tokens=None,
+            cache_creation_input_tokens=None,
+            cache_read_input_tokens=None,
             output_tokens=None,
         )
 
@@ -102,6 +104,8 @@ class WrappedTestClient(WrappedClient):
         return TextAndTokens(
             text=chat_completion.choices[0].message.content,
             input_tokens=0,
+            cache_creation_input_tokens=0,
+            cache_read_input_tokens=0,
             output_tokens=0,
         )
 
