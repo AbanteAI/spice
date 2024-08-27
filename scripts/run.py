@@ -153,7 +153,9 @@ async def embeddings_and_transcription_example():
 
     embeddings = await client.get_embeddings(input_texts, TEXT_EMBEDDING_ADA_002)
     transcription = await client.get_transcription("~/.mentat/logs/audio/talk_transcription.wav", WHISPER_1)
+
     print(transcription.text)
+    print(f"{len(embeddings.embeddings)} embeddings fetched for ${(embeddings.cost or 0) / 100:.2f}")
 
 
 async def run_all_examples():
@@ -172,5 +174,4 @@ async def run_all_examples():
 
 
 if __name__ == "__main__":
-    asyncio.run(messages_example())
-    # asyncio.run(run_all_examples())
+    asyncio.run(run_all_examples())

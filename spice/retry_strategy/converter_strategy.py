@@ -1,5 +1,5 @@
 import dataclasses
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 from spice.retry_strategy import Behavior, RetryStrategy
 from spice.spice import SpiceCallArgs

@@ -134,6 +134,8 @@ class WrappedOpenAIClient(WrappedClient):
         return TextAndTokens(
             text=chat_completion.choices[0].message.content,
             input_tokens=chat_completion.usage.prompt_tokens,
+            cache_creation_input_tokens=0,
+            cache_read_input_tokens=0,
             output_tokens=chat_completion.usage.completion_tokens,
         )
 
@@ -311,7 +313,7 @@ class WrappedAnthropicClient(WrappedClient):
                                 if image.startswith("http"):
                                     try:
                                         response = httpx.get(image)
-                                    except:
+                                    except:  # noqa: E722
                                         raise ImageError(f"Error fetching image {image}.")
 
                                     media_type = response.headers.get("content-type", mimetypes.guess_type(image)[0])

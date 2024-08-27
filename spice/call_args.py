@@ -1,9 +1,9 @@
-from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Callable, Collection, Dict, Generic, List, Optional, TypeVar, cast
+from dataclasses import dataclass
+from typing import Collection, Optional
 
 from openai.types.chat.completion_create_params import ResponseFormat
 
-from spice.spice_message import MessagesEncoder, SpiceMessage
+from spice.spice_message import SpiceMessage
 
 
 @dataclass
