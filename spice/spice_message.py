@@ -23,8 +23,8 @@ class SpiceMessage(BaseModel):
     cache: Optional[bool] = None
 
 
-def create_message(role: Literal["user", "assistant", "system"], content: str) -> SpiceMessage:
-    return SpiceMessage(role=role, content=content)
+def create_message(role: Literal["user", "assistant", "system"], content: str, cache: bool = False) -> SpiceMessage:
+    return SpiceMessage(role=role, content=content, cache=cache)
 
 
 def user_message(content: str, cache: bool = False) -> SpiceMessage:
@@ -32,28 +32,30 @@ def user_message(content: str, cache: bool = False) -> SpiceMessage:
     return SpiceMessage(role="user", content=content, cache=cache)
 
 
-def system_message(content: str) -> SpiceMessage:
+def system_message(content: str, cache: bool = False) -> SpiceMessage:
     """Creates a system message with the given content."""
-    return SpiceMessage(role="system", content=content)
+    return SpiceMessage(role="system", content=content, cache=cache)
 
 
-def assistant_message(content: str) -> SpiceMessage:
+def assistant_message(content: str, cache: bool = False) -> SpiceMessage:
     """Creates an assistant message with the given content."""
-    return SpiceMessage(role="assistant", content=content)
+    return SpiceMessage(role="assistant", content=content, cache=cache)
 
 
-def image_bytes_message(image_bytes: bytes, media_type: str) -> SpiceMessage:
+def image_bytes_message(image_bytes: bytes, media_type: str, cache: bool = False) -> SpiceMessage:
     """Creates a user message containing the given image bytes."""
     if media_type not in VALID_MIMETYPES:
         raise ImageError(f"Invalid image type {media_type}: Image must be a png, jpg, gif, or webp image.")
 
     image = base64.b64encode(image_bytes).decode("utf-8")
     return SpiceMessage(
-        role="user", content=[{"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{image}"}}]
+        role="user",
+        content=[{"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{image}"}}],
+        cache=cache,
     )
 
 
-def file_image_message(file_path: Path | str) -> SpiceMessage:
+def file_image_message(file_path: Path | str, cache: bool = False) -> SpiceMessage:
     """Creates a user message with the image at the given path. The image must be a png, jpg, gif, or webp image."""
 
     file_path = Path(file_path).expanduser().resolve()
@@ -67,15 +69,15 @@ def file_image_message(file_path: Path | str) -> SpiceMessage:
     with file_path.open("rb") as file:
         image_bytes = file.read()
 
-    return image_bytes_message(image_bytes, media_type)
+    return image_bytes_message(image_bytes, media_type, cache=cache)
 
 
-def http_image_message(url: str) -> SpiceMessage:
+def http_image_message(url: str, cache: bool = False) -> SpiceMessage:
     """Creates a user message with an image from the given url."""
     if not (url.startswith("http://") or url.startswith("https://")):
         raise ImageError(f"Invalid image URL {url}: Must be http or https protocol.")
 
-    return SpiceMessage(role="user", content=[{"type": "image_url", "image_url": {"url": url}}])
+    return SpiceMessage(role="user", content=[{"type": "image_url", "image_url": {"url": url}}], cache=cache)
 
 
 class MessagesEncoder(JSONEncoder):
@@ -113,8 +115,10 @@ class SpiceMessages(UserList[SpiceMessage]):
         self._client = client
         super().__init__(initlist)
 
-    def add_message(self, role: Literal["user", "assistant", "system"], content: str) -> SpiceMessages:
-        self.data.append(create_message(role, content))
+    def add_message(
+        self, role: Literal["user", "assistant", "system"], content: str, cache: bool = False
+    ) -> SpiceMessages:
+        self.data.append(create_message(role, content, cache))
         return self
 
     def add_user_message(self, content: str, cache: bool = False) -> SpiceMessages:
@@ -122,62 +126,64 @@ class SpiceMessages(UserList[SpiceMessage]):
         self.data.append(user_message(content, cache))
         return self
 
-    def add_system_message(self, content: str) -> SpiceMessages:
+    def add_system_message(self, content: str, cache: bool = False) -> SpiceMessages:
         """Appends a system message with the given content."""
-        self.data.append(system_message(content))
+        self.data.append(system_message(content, cache))
         return self
 
-    def add_assistant_message(self, content: str) -> SpiceMessages:
+    def add_assistant_message(self, content: str, cache: bool = False) -> SpiceMessages:
         """Appends an assistant message with the given content."""
-        self.data.append(assistant_message(content))
+        self.data.append(assistant_message(content, cache))
         return self
 
-    def add_image_bytes_message(self, image_bytes: bytes, media_type: str) -> SpiceMessages:
+    def add_image_bytes_message(self, image_bytes: bytes, media_type: str, cache: bool = False) -> SpiceMessages:
         """Appends a user message with the given image bytes."""
-        self.data.append(image_bytes_message(image_bytes, media_type))
+        self.data.append(image_bytes_message(image_bytes, media_type, cache))
         return self
 
-    def add_file_image_message(self, file_path: Path | str) -> SpiceMessages:
+    def add_file_image_message(self, file_path: Path | str, cache: bool = False) -> SpiceMessages:
         """Appends a user message with the image from the given file. The image must be a png, jpg, gif, or webp image."""
-        self.data.append(file_image_message(file_path))
+        self.data.append(file_image_message(file_path, cache))
         return self
 
-    def add_http_image_message(self, url: str) -> SpiceMessages:
+    def add_http_image_message(self, url: str, cache: bool = False) -> SpiceMessages:
         """Appends a user message with the image from the given url."""
-        self.data.append(http_image_message(url))
+        self.data.append(http_image_message(url, cache))
         return self
 
-    def add_prompt(self, role: Literal["user", "assistant", "system"], name: str, **context: Any) -> SpiceMessages:
+    def add_prompt(
+        self, role: Literal["user", "assistant", "system"], name: str, cache: bool = False, **context: Any
+    ) -> SpiceMessages:
         prompt = self._client.get_prompt(name)
         rendered_prompt = self._client.get_rendered_prompt(name, **context)
-        message = _MetadataDict(create_message(role, rendered_prompt))
+        message = _MetadataDict(create_message(role, rendered_prompt, cache))
         message.prompt_metadata = {"name": name, "content": prompt, "context": context}
         self.data.append(message)  # pyright: ignore
         return self
 
-    def add_user_prompt(self, name: str, **context: Any) -> SpiceMessages:
+    def add_user_prompt(self, name: str, cache: bool = False, **context: Any) -> SpiceMessages:
         """Appends a user message with the given pre-loaded prompt using jinja to render the context."""
         prompt = self._client.get_prompt(name)
         rendered_prompt = self._client.get_rendered_prompt(name, **context)
-        message = _MetadataDict(user_message(rendered_prompt))
+        message = _MetadataDict(user_message(rendered_prompt, cache))
         message.prompt_metadata = {"name": name, "content": prompt, "context": context}
         self.data.append(message)  # pyright: ignore
         return self
 
-    def add_system_prompt(self, name: str, **context: Any) -> SpiceMessages:
+    def add_system_prompt(self, name: str, cache: bool = False, **context: Any) -> SpiceMessages:
         """Appends a system message with the given pre-loaded prompt using jinja to render the context."""
         prompt = self._client.get_prompt(name)
         rendered_prompt = self._client.get_rendered_prompt(name, **context)
-        message = _MetadataDict(system_message(rendered_prompt))
+        message = _MetadataDict(system_message(rendered_prompt, cache))
         message.prompt_metadata = {"name": name, "content": prompt, "context": context}
         self.data.append(message)  # pyright: ignore
         return self
 
-    def add_assistant_prompt(self, name: str, **context: Any) -> SpiceMessages:
+    def add_assistant_prompt(self, name: str, cache: bool = False, **context: Any) -> SpiceMessages:
         """Appends a assistant message with the given pre-loaded prompt using jinja to render the context."""
         prompt = self._client.get_prompt(name)
         rendered_prompt = self._client.get_rendered_prompt(name, **context)
-        message = _MetadataDict(assistant_message(rendered_prompt))
+        message = _MetadataDict(assistant_message(rendered_prompt, cache))
         message.prompt_metadata = {"name": name, "content": prompt, "context": context}
         self.data.append(message)  # pyright: ignore
         return self
