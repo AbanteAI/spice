@@ -17,6 +17,7 @@ from anthropic.types import Message, MessageParam, MessageStreamEvent, TextBlock
 from openai import AsyncAzureOpenAI, AsyncOpenAI, OpenAI
 from openai.types.chat import ChatCompletion, ChatCompletionChunk, ChatCompletionMessageParam
 from PIL import Image
+from pydantic import BaseModel
 from typing_extensions import override
 
 from spice.errors import APIConnectionError, APIError, AuthenticationError, ImageError, InvalidModelError
@@ -27,6 +28,14 @@ if TYPE_CHECKING:
     from spice.spice import SpiceCallArgs
 
 
+class TextAndTokens(BaseModel):
+    text: Optional[str] = None
+    input_tokens: Optional[int] = None
+    cache_creation_input_tokens: Optional[int] = None
+    cache_read_input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
+
+
 class WrappedClient(ABC):
     @abstractmethod
     async def get_chat_completion_or_stream(
@@ -34,10 +43,10 @@ class WrappedClient(ABC):
     ) -> ChatCompletion | AsyncIterator[ChatCompletionChunk] | Message | AsyncIterator[MessageStreamEvent]: ...
 
     @abstractmethod
-    def process_chunk(self, chunk, call_args: SpiceCallArgs) -> tuple[Optional[str], Optional[int], Optional[int]]: ...
+    def process_chunk(self, chunk, call_args: SpiceCallArgs) -> TextAndTokens: ...
 
     @abstractmethod
-    def extract_text_and_tokens(self, chat_completion, call_args: SpiceCallArgs) -> tuple[str, int, int]: ...
+    def extract_text_and_tokens(self, chat_completion, call_args: SpiceCallArgs) -> TextAndTokens: ...
 
     @abstractmethod
     def catch_and_convert_errors(self) -> ContextManager[None]: ...
@@ -118,14 +127,14 @@ class WrappedOpenAIClient(WrappedClient):
         if chunk.usage is not None:
             input_tokens = chunk.usage.prompt_tokens
             output_tokens = chunk.usage.completion_tokens
-        return content, input_tokens, output_tokens
+        return TextAndTokens(text=content, input_tokens=input_tokens, output_tokens=output_tokens)
 
     @override
     def extract_text_and_tokens(self, chat_completion, call_args: SpiceCallArgs):
-        return (
-            chat_completion.choices[0].message.content,
-            chat_completion.usage.prompt_tokens,
-            chat_completion.usage.completion_tokens,
+        return TextAndTokens(
+            text=chat_completion.choices[0].message.content,
+            input_tokens=chat_completion.usage.prompt_tokens,
+            output_tokens=chat_completion.usage.completion_tokens,
         )
 
     @override
@@ -226,7 +235,7 @@ class WrappedAzureClient(WrappedOpenAIClient):
     def process_chunk(self, chunk, call_args: SpiceCallArgs):
         # In Azure, the first chunk only contains moderation metadata, and an empty choices array
         if not chunk.choices:
-            return None, None, None
+            return TextAndTokens()
         else:
             return super().process_chunk(chunk, call_args)
 
@@ -328,7 +337,8 @@ class WrappedAnthropicClient(WrappedClient):
                             converted_messages[-1]["content"].extend(content)  # pyright: ignore
                         else:
                             converted_messages.append({"role": "user", "content": content})
-
+                    if message.cache:
+                        converted_messages[-1]["content"][-1]["cache_control"] = {"type": "ephemeral"}  # pyright: ignore
                     cur_role = "user"
                 case "tool":
                     # Right now anthropic tool use is in beta and doesn't support some things like streaming, but once it releases we can modify this.
@@ -375,6 +385,7 @@ class WrappedAnthropicClient(WrappedClient):
             messages=converted_messages,
             stream=call_args.stream,
             max_tokens=max_tokens,
+            extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
             **maybe_temperature_kwargs,
         )
 
@@ -382,6 +393,8 @@ class WrappedAnthropicClient(WrappedClient):
     def process_chunk(self, chunk, call_args: SpiceCallArgs):
         content = None
         input_tokens = None
+        cache_creation_input_tokens = None
+        cache_read_input_tokens = None
         output_tokens = None
         if chunk.type == "content_block_delta":
             content = chunk.delta.text
@@ -389,17 +402,28 @@ class WrappedAnthropicClient(WrappedClient):
             if call_args.response_format is not None and call_args.response_format.get("type") == "json_object":
                 content = "{"
             input_tokens = chunk.message.usage.input_tokens
+            cache_creation_input_tokens = chunk.message.usage.cache_creation_input_tokens
+            cache_read_input_tokens = chunk.message.usage.cache_read_input_tokens
+            output_tokens = chunk.message.usage.output_tokens
         elif chunk.type == "message_delta":
             output_tokens = chunk.usage.output_tokens
-        return content, input_tokens, output_tokens
+        return TextAndTokens(
+            text=content,
+            input_tokens=input_tokens,
+            cache_creation_input_tokens=cache_creation_input_tokens,
+            cache_read_input_tokens=cache_read_input_tokens,
+            output_tokens=output_tokens,
+        )
 
     @override
     def extract_text_and_tokens(self, chat_completion, call_args: SpiceCallArgs):
         add_brace = call_args.response_format is not None and call_args.response_format.get("type") == "json_object"
-        return (
-            ("{" if add_brace else "") + chat_completion.content[0].text,
-            chat_completion.usage.input_tokens,
-            chat_completion.usage.output_tokens,
+        return TextAndTokens(
+            text=("{" if add_brace else "") + chat_completion.content[0].text,
+            input_tokens=chat_completion.usage.input_tokens,
+            cache_creation_input_tokens=chat_completion.usage.cache_creation_input_tokens,
+            cache_read_input_tokens=chat_completion.usage.cache_read_input_tokens,
+            output_tokens=chat_completion.usage.output_tokens,
         )
 
     @override

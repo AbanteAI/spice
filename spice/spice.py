@@ -22,8 +22,14 @@ from spice.providers import Provider, get_provider_from_name
 from spice.retry_strategy import Behavior, RetryStrategy
 from spice.retry_strategy.default_strategy import DefaultRetryStrategy
 from spice.spice_message import MessagesEncoder, SpiceMessage, SpiceMessages
-from spice.utils import embeddings_request_cost, string_identity, text_request_cost, transcription_request_cost
-from spice.wrapped_clients import WrappedClient
+from spice.utils import (
+    embeddings_request_cost,
+    print_stream,
+    string_identity,
+    text_request_cost,
+    transcription_request_cost,
+)
+from spice.wrapped_clients import TextAndTokens, WrappedClient
 
 T = TypeVar("T")
 
@@ -45,6 +51,12 @@ class SpiceResponse(Generic[T]):
 
     input_tokens: int
     """The number of input tokens given in this response. May be inaccurate for incomplete streamed responses."""
+
+    cache_creation_input_tokens: int
+    """The number of input tokens cached as part of this response."""
+
+    cache_read_input_tokens: int
+    """The number of input tokens read from cache as part of this response."""
 
     output_tokens: int
     """
@@ -107,6 +119,8 @@ class StreamingSpiceResponse:
         self._start_time = timer()
         self._end_time = None
         self._input_tokens = None
+        self._cache_creation_input_tokens = None
+        self._cache_read_input_tokens = None
         self._output_tokens = None
         self._finished = False
         self._client = client
@@ -123,11 +137,16 @@ class StreamingSpiceResponse:
                 content = None
                 while content is None:
                     chunk = await anext(self._stream)
-                    content, input_tokens, output_tokens = self._client.process_chunk(chunk, self._call_args)
-                    if input_tokens is not None:
-                        self._input_tokens = input_tokens
-                    if output_tokens is not None:
-                        self._output_tokens = output_tokens
+                    text_and_tokens = self._client.process_chunk(chunk, self._call_args)
+                    content = text_and_tokens.text
+                    if text_and_tokens.input_tokens is not None:
+                        self._input_tokens = text_and_tokens.input_tokens
+                    if text_and_tokens.cache_creation_input_tokens is not None:
+                        self._cache_creation_input_tokens = text_and_tokens.cache_creation_input_tokens
+                    if text_and_tokens.cache_read_input_tokens is not None:
+                        self._cache_read_input_tokens = text_and_tokens.cache_read_input_tokens
+                    if text_and_tokens.output_tokens is not None:
+                        self._output_tokens = text_and_tokens.output_tokens
                 if self._streaming_callback is not None:
                     self._streaming_callback(content)
                 self._text.append(content)
@@ -150,19 +169,29 @@ class StreamingSpiceResponse:
         input_tokens = self._input_tokens
         if input_tokens is None:
             input_tokens = self._client.count_messages_tokens(self._call_args.messages, self._model)
+        cache_creation_input_tokens = self._cache_creation_input_tokens
+        if cache_creation_input_tokens is None:
+            cache_creation_input_tokens = 0
+        cache_read_input_tokens = self._cache_read_input_tokens
+        if cache_read_input_tokens is None:
+            cache_read_input_tokens = 0
         output_tokens = self._output_tokens
         if output_tokens is None:
             output_tokens = self._client.count_string_tokens(full_output, self._model, full_message=False)
 
-        cost = text_request_cost(self._model, input_tokens, output_tokens)
+        cost = text_request_cost(
+            self._model, input_tokens, cache_creation_input_tokens, cache_read_input_tokens, output_tokens
+        )
         response = SpiceResponse(
-            self._call_args,
-            full_output,
-            self._end_time - self._start_time,
-            input_tokens,
-            output_tokens,
-            self._finished,
-            cost,
+            call_args=self._call_args,
+            text=full_output,
+            total_time=self._end_time - self._start_time,
+            input_tokens=input_tokens,
+            cache_creation_input_tokens=cache_creation_input_tokens,
+            cache_read_input_tokens=cache_read_input_tokens,
+            output_tokens=output_tokens,
+            completed=self._finished,
+            cost=cost,
         )
         if self._callback is not None:
             self._callback(response)
@@ -462,16 +491,26 @@ class Spice:
                         text_model, call_args, client, stream, None, streaming_callback
                     )
                     chat_completion = await streaming_spice_response.complete_response()
-                    text, input_tokens, output_tokens = (
-                        chat_completion.text,
-                        chat_completion.input_tokens,
-                        chat_completion.output_tokens,
+                    if streaming_callback == print_stream:
+                        print()
+                    text_and_tokens = TextAndTokens(
+                        text=chat_completion.text,
+                        input_tokens=chat_completion.input_tokens,
+                        cache_creation_input_tokens=chat_completion.cache_creation_input_tokens,
+                        cache_read_input_tokens=chat_completion.cache_read_input_tokens,
+                        output_tokens=chat_completion.output_tokens,
                     )
                 else:
                     chat_completion = await client.get_chat_completion_or_stream(call_args)
-                    text, input_tokens, output_tokens = client.extract_text_and_tokens(chat_completion, call_args)
+                    text_and_tokens = client.extract_text_and_tokens(chat_completion, call_args)
 
-            completion_cost = text_request_cost(text_model, input_tokens, output_tokens)
+            completion_cost = text_request_cost(
+                text_model,
+                text_and_tokens.input_tokens,  # type: ignore
+                text_and_tokens.cache_creation_input_tokens,  # type: ignore
+                text_and_tokens.cache_read_input_tokens,  # type: ignore
+                text_and_tokens.output_tokens,  # type: ignore
+            )
             if completion_cost is not None:
                 cost += completion_cost
                 self._total_cost += completion_cost
@@ -479,10 +518,22 @@ class Spice:
             end_time = timer()
 
             behavior, next_call_args, result, call_name = retry_strategy.decide(
-                call_args, attempt_number, text, name or ""
+                call_args,
+                attempt_number,
+                text_and_tokens.text,  # type: ignore
+                name or "",
             )
             response = SpiceResponse(
-                call_args, text, end_time - start_time, input_tokens, output_tokens, True, cost, _result=result
+                call_args=call_args,
+                text=text_and_tokens.text,  # type: ignore
+                total_time=end_time - start_time,
+                input_tokens=text_and_tokens.input_tokens,  # type: ignore
+                cache_creation_input_tokens=text_and_tokens.cache_creation_input_tokens,  # type: ignore
+                cache_read_input_tokens=text_and_tokens.cache_read_input_tokens,  # type: ignore
+                output_tokens=text_and_tokens.output_tokens,  # type: ignore
+                completed=True,
+                cost=cost,
+                _result=result,
             )
             self._log_response(response, call_name)
             if behavior == Behavior.RETURN:

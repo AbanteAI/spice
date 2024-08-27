@@ -3,9 +3,20 @@ from typing import Optional
 from spice.models import EmbeddingModel, TextModel, TranscriptionModel
 
 
-def text_request_cost(model: TextModel, input_tokens: int, output_tokens: int) -> Optional[float]:
+def text_request_cost(
+    model: TextModel,
+    input_tokens: int,
+    cache_creation_input_tokens: int,
+    cache_read_input_tokens: int,
+    output_tokens: int,
+) -> Optional[float]:
     if model.input_cost is not None and model.output_cost is not None:
-        return (model.input_cost * input_tokens + model.output_cost * output_tokens) / 1_000_000
+        return (
+            model.input_cost * input_tokens
+            + 1.25 * model.input_cost * cache_creation_input_tokens
+            + 0.10 * model.input_cost * cache_read_input_tokens
+            + model.output_cost * output_tokens
+        ) / 1_000_000
     else:
         return None
 

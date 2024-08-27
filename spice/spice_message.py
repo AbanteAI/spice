@@ -20,15 +20,16 @@ VALID_MIMETYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"]
 class SpiceMessage(BaseModel):
     role: Literal["user", "assistant", "system"]
     content: Union[str, List[Dict[str, Any]]]
+    cache: Optional[bool] = None
 
 
 def create_message(role: Literal["user", "assistant", "system"], content: str) -> SpiceMessage:
     return SpiceMessage(role=role, content=content)
 
 
-def user_message(content: str) -> SpiceMessage:
+def user_message(content: str, cache: bool = False) -> SpiceMessage:
     """Creates a user message with the given content."""
-    return SpiceMessage(role="user", content=content)
+    return SpiceMessage(role="user", content=content, cache=cache)
 
 
 def system_message(content: str) -> SpiceMessage:
@@ -116,9 +117,9 @@ class SpiceMessages(UserList[SpiceMessage]):
         self.data.append(create_message(role, content))
         return self
 
-    def add_user_message(self, content: str) -> SpiceMessages:
+    def add_user_message(self, content: str, cache: bool = False) -> SpiceMessages:
         """Appends a user message with the given content."""
-        self.data.append(user_message(content))
+        self.data.append(user_message(content, cache))
         return self
 
     def add_system_message(self, content: str) -> SpiceMessages:
@@ -204,3 +205,9 @@ class SpiceMessages(UserList[SpiceMessage]):
 
     def __mul__(self, n):
         return self.__class__(self._client, self.data * n)
+
+    def copy(self):
+        return self.__class__(self._client, self.data.copy())
+
+    def __copy__(self):
+        return self.copy()
