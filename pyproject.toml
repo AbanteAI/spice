@@ -32,4 +32,5 @@ dev = [
     "pyright",
     "pytest",
     "pytest-asyncio"
+    "termcolor"
 ]
