@@ -138,6 +138,12 @@ class SpiceMessages(Collection[SpiceMessage]):
     def __iter__(self):
         return iter(self.data)
 
+    def __len__(self):
+        return len(self.data)
+
+    def __contains__(self, item):
+        return item in self.data
+
     def copy(self):
         new_copy = SpiceMessages(self._client)
         new_copy.data = self.data.copy()
