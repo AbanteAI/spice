@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import dataclasses
 import glob
 import json
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from json import JSONDecodeError
 from pathlib import Path
@@ -26,6 +25,7 @@ from typing import (
 import httpx
 from jinja2 import DictLoader, Environment
 from openai.types.chat.completion_create_params import ResponseFormat
+from pydantic import BaseModel, Field
 
 from spice.call_args import SpiceCallArgs
 from spice.errors import InvalidModelError, UnknownModelError
@@ -46,50 +46,49 @@ from spice.wrapped_clients import TextAndTokens, WrappedClient
 T = TypeVar("T")
 
 
-@dataclass
-class SpiceResponse(Generic[T]):
-    """
-    Contains a collection of information about a completed LLM call.
-    """
+class SpiceResponse(BaseModel, Generic[T]):
+    call_args: SpiceCallArgs = Field(
+        description="""The call arguments given to the model that created this response."""
+    )
+    text: str = Field(description="""The total text sent by the model.""")
+    total_time: float = Field(
+        description="""How long it took for the response to be completed.
+        May be inaccurate for incomplete streamed responses."""
+    )
+    input_tokens: int = Field(
+        description="""The number of input tokens given in this response.
+        May be inaccurate for incomplete streamed responses."""
+    )
+    cache_creation_input_tokens: int = Field(
+        description="""The number of input tokens cached as part of this response."""
+    )
+    cache_read_input_tokens: int = Field(
+        description="""The number of input tokens read from cache as part of this response."""
+    )
+    output_tokens: int = Field(
+        description="""The number of output tokens given by the model in this response.
+        May be inaccurate for incomplete streamed responses."""
+    )
+    completed: bool = Field(
+        description="""Whether or not this response was fully completed.
+        This will only ever be false for incomplete streamed responses."""
+    )
+    cost: Optional[float] = Field(
+        default=None,
+        description="""The cost of this request in cents.
+        May be inaccurate for incompleted streamed responses.
+        Will be None if the cost of the model used is not known.""",
+    )
+    result: Optional[T] = Field(
+        default=None,
+        exclude=True,  # may not be serializable
+        description="""The result of this response, if a converter was given,
+        otherwise the raw text.""",
+    )
 
-    call_args: SpiceCallArgs
-    """The call arguments given to the model that created this response."""
-
-    text: str
-    """The total text sent by the model."""
-
-    total_time: float
-    """How long it took for the response to be completed. May be inaccurate for incomplete streamed responses."""
-
-    input_tokens: int
-    """The number of input tokens given in this response. May be inaccurate for incomplete streamed responses."""
-
-    cache_creation_input_tokens: int
-    """The number of input tokens cached as part of this response."""
-
-    cache_read_input_tokens: int
-    """The number of input tokens read from cache as part of this response."""
-
-    output_tokens: int
-    """
-    The number of output tokens given by the model in this response.
-    May be inaccurate for incomplete streamed responses.
-    """
-
-    completed: bool
-    """
-    Whether or not this response was fully completed.
-    This will only ever be false for incomplete streamed responses.
-    """
-
-    cost: Optional[float]
-    """
-    The cost of this request in cents. May be inaccurate for incompleted streamed responses.
-    Will be None if the cost of the model used is not known.
-    """
-
-    _result: T | None = field(default=None, repr=False)
-    """The result of the LLM call. This will be the same as text if no converter was given."""
+    def __post_init__(self):
+        if self.result is None:
+            self.result = self.text  # type: ignore
 
     @property
     def total_tokens(self) -> int:
@@ -103,12 +102,6 @@ class SpiceResponse(Generic[T]):
         May be inaccurate for streamed responses if not iterated over and completed immediately.
         """
         return len(self.text) / self.total_time
-
-    @property
-    def result(self) -> T:
-        if self._result is None:
-            return cast(T, self.text)
-        return self._result
 
 
 class StreamingSpiceResponse:
@@ -339,9 +332,7 @@ class Spice:
         if self.logging_dir is not None:
             full_name = f"{base_name}_{self._cur_logged_names[base_name]}.json"
             self._cur_logged_names[base_name] += 1
-            response_dict = dataclasses.asdict(response)
-            response_dict.pop("_result", "")  # May not be serializable
-            response_json = json.dumps(response_dict)
+            response_json = response.model_dump_json()
 
             logging_dir = self.logging_dir / self._cur_run
             logging_dir.mkdir(exist_ok=True, parents=True)
@@ -548,7 +539,7 @@ class Spice:
                 output_tokens=text_and_tokens.output_tokens,  # type: ignore
                 completed=True,
                 cost=cost,
-                _result=result,
+                result=result,
             )
             self._log_response(response, call_name)
             if behavior == Behavior.RETURN:
