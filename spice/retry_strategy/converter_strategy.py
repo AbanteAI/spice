@@ -1,4 +1,3 @@
-import dataclasses
 from typing import Any, Callable
 
 from spice.retry_strategy import Behavior, RetryStrategy
@@ -32,7 +31,7 @@ class ConverterStrategy(RetryStrategy):
                 messages = SpiceMessages(messages=call_args.messages)
                 messages.add_assistant_text(model_output)
                 messages.add_user_text(self.render_failure_message(str(e)))
-                call_args = dataclasses.replace(call_args, messages=messages)
-                return Behavior.RETRY, call_args, None, f"{name}-retry-{attempt_number}-fail"
+                new_call_args = call_args.model_copy(update={"messages": messages})
+                return Behavior.RETRY, new_call_args, None, f"{name}-retry-{attempt_number}-fail"
             else:
                 raise ValueError("Failed to get a valid response after all retries")

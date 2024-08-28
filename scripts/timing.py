@@ -15,9 +15,7 @@ async def speed_compare():
     client = Spice()
 
     messages = (
-        client.new_messages()
-        .add_system_message("You are a helpful assistant.")
-        .add_user_message("list 100 random words")
+        client.new_messages().add_system_text("You are a helpful assistant.").add_user_text("list 100 random words")
     )
 
     models = [GPT_4o_2024_08_06, SONNET_3_5]

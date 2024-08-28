@@ -4,7 +4,7 @@ import base64
 import mimetypes
 from collections.abc import Collection
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, Literal, Optional, Union, get_args
+from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Union, get_args
 
 from pydantic import BaseModel, Field
 
@@ -79,16 +79,8 @@ def _generate_role_specific_methods(cls):
 
 
 @_generate_role_specific_methods
-class SpiceMessages(Collection[SpiceMessage]):
+class SpiceMessages(List[SpiceMessage]):
     """A collection of messages to be sent to an API endpoint."""
-
-    if TYPE_CHECKING:
-
-        def __getattribute__(self, name: str) -> Any:
-            for role in get_args(Role):
-                if name.startswith(f"add_{role}_"):
-                    _, suffix = name.split(f"{role}_")
-                    return getattr(self, f"add_{suffix}")
 
     def __init__(self, client: Optional[Spice] = None, messages: Collection[SpiceMessage] = []):
         self._client = client
@@ -148,3 +140,11 @@ class SpiceMessages(Collection[SpiceMessage]):
         new_copy = SpiceMessages(self._client)
         new_copy.data = self.data.copy()
         return new_copy
+
+    if TYPE_CHECKING:
+
+        def __getattribute__(self, name: str) -> Any:
+            for role in get_args(Role):
+                if name.startswith(f"add_{role}_"):
+                    _, suffix = name.split(f"{role}_")
+                    return getattr(self, f"add_{suffix}")

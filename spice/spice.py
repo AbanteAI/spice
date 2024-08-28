@@ -18,7 +18,6 @@ from typing import (
     List,
     Optional,
     TypeVar,
-    Union,
     cast,
 )
 
@@ -394,7 +393,7 @@ class Spice:
 
     def _fix_call_args(
         self,
-        messages: Union[SpiceMessages, List[SpiceMessage]],
+        messages: List[SpiceMessage],
         model: Model,
         stream: bool,
         temperature: Optional[float],
@@ -406,14 +405,9 @@ class Spice:
             if response_format == {"type": "text"}:
                 response_format = None
 
-        # If messages is a SpiceMessages object, get the data so it can be serialized.
-        # Nothing is lost but the attached client
-        if isinstance(messages, SpiceMessages):
-            messages = messages.data
-
         return SpiceCallArgs(
             model=model.name,
-            messages=messages,
+            messages=list(messages),  # convert from SpiceMessages so we can serialize
             stream=stream,
             temperature=self._default_temperature if temperature is None else temperature,
             max_tokens=max_tokens,
@@ -422,7 +416,7 @@ class Spice:
 
     async def get_response(
         self,
-        messages: Union[SpiceMessages, List[SpiceMessage]],
+        messages: List[SpiceMessage],
         model: Optional[TextModel | str] = None,
         provider: Optional[Provider | str] = None,
         temperature: Optional[float] = None,
@@ -550,7 +544,7 @@ class Spice:
 
     async def stream_response(
         self,
-        messages: Union[SpiceMessages, List[SpiceMessage]],
+        messages: List[SpiceMessage],
         model: Optional[TextModel | str] = None,
         provider: Optional[Provider | str] = None,
         temperature: Optional[float] = None,

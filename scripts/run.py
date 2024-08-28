@@ -22,6 +22,9 @@ async def basic_example():
     response = await client.get_response(messages=messages, model=model)
     print(response.text)
 
+    json_response = response.model_dump_json(indent=2)
+    print(json_response)
+
 
 async def streaming_example():
     # You can set a default model for the client instead of passing it with each call
