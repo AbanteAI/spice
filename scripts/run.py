@@ -1,7 +1,6 @@
 import asyncio
 import os
 import sys
-from typing import List
 
 # Modify sys.path to ensure the script can run even when it's not part of the installed library.
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -12,27 +11,11 @@ from spice import Spice
 async def basic_example():
     client = Spice()
 
-    messages = [
-        {"role": "system", "content": "You are a helpful assistant."},
-        {"role": "user", "content": "list 5 random words"},
-    ]
-    response = await client.get_response(messages=messages, model="gpt-4o")
-
-    print(response.text)
-
-
-async def messages_example():
-    client = Spice()
-
-    # message convienence functions
-    messages = (
-        client.new_messages()
-        .add_system_message("You are a helpful assistant.")
-        .add_user_message("list 5 random species of birds")
-    )
+    messages = client.new_messages()
+    messages.add_system_text("You are a helpful assistant.")
+    messages.add_user_text("list 5 random words")
 
     response = await client.get_response(messages=messages, model="gpt-4o")
-
     print(response.text)
 
 
@@ -44,10 +27,10 @@ async def streaming_example():
     client.load_prompt("scripts/prompt.txt", name="my prompt")
 
     # Spice can also automatically render Jinja templates.
-    messages = [
-        {"role": "system", "content": client.get_rendered_prompt("my prompt", assistant_name="Friendly Robot")},
-        {"role": "user", "content": "list 5 random words"},
-    ]
+    messages = client.new_messages()
+    messages.add_system_prompt("my prompt", assistant_name="Friendly Robot")
+    messages.add_user_text("list 5 random words")
+
     stream = await client.stream_response(messages=messages)
 
     async for text in stream:
@@ -76,10 +59,10 @@ async def multiple_providers_example():
 
     client = Spice(model_aliases=model_aliases)
 
-    messages = [
-        {"role": "system", "content": "You are a helpful assistant."},
-        {"role": "user", "content": "list 5 random words"},
-    ]
+    messages = client.new_messages()
+    messages.add_system_text("You are a helpful assistant.")
+    messages.add_user_text("list 5 random words")
+
     responses = await asyncio.gather(
         client.get_response(messages=messages, model="task1_model"),
         client.get_response(messages=messages, model="task2_model"),
@@ -100,10 +83,9 @@ async def multiple_providers_example():
 async def azure_example():
     client = Spice()
 
-    messages = [
-        {"role": "system", "content": "You are a helpful assistant."},
-        {"role": "user", "content": "list 5 random words"},
-    ]
+    messages = client.new_messages()
+    messages.add_system_text("You are a helpful assistant.")
+    messages.add_user_text("list 5 random words")
 
     # To use Azure, specify the provider and the deployment model name
     response = await client.get_response(messages=messages, model="first-gpt35", provider="azure")
@@ -126,21 +108,20 @@ async def vision_example():
     client = Spice()
 
     # Spice makes it easy to add images from files or the internet
-    from spice import SpiceMessage, SpiceMessages
     from spice.models import CLAUDE_3_OPUS_20240229, GPT_4o
-    from spice.spice_message import file_image_message, user_message
 
-    messages: List[SpiceMessage] = [user_message("What do you see?"), file_image_message("~/.mentat/picture.png")]
+    messages = client.new_messages()
+    messages.add_user_image_from_file("~/.mentat/picture.png")
+    messages.add_user_text("What do you see?")
     response = await client.get_response(messages, GPT_4o)
     print(response.text)
 
-    # Alternatively, you can use the SpiceMessages wrapper to easily create your prompts
-    spice_messages: SpiceMessages = (
-        SpiceMessages(client)
-        .add_file_image_message("~/.mentat/picture.png")
-        .add_user_message("What do you see? Describe the objects, colors, and style.")
+    messages = (
+        client.new_messages()
+        .add_user_image_from_file("~/.mentat/picture.png")
+        .add_user_text("What do you see? Describe the objects, colors, and style.")
     )
-    response = await client.get_response(spice_messages, CLAUDE_3_OPUS_20240229)
+    response = await client.get_response(messages, CLAUDE_3_OPUS_20240229)
     print(response.text)
 
 

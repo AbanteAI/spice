@@ -31,13 +31,13 @@ async def run(cache: bool):
 
     messages = (
         client.new_messages()
-        .add_system_message(f"Answer questions about a book. Seed:{random.random()}")
-        .add_user_message(f"<book>{book_text}</book>", cache=cache)
+        .add_system_text(f"Answer questions about a book. Seed:{random.random()}")
+        .add_user_text(f"<book>{book_text}</book>", cache=cache)
     )
 
     cprint("First model response:", "green")
     response = await client.get_response(
-        messages=messages.copy().add_user_message("how many chapters are there? no elaboration."),
+        messages=messages.copy().add_user_text("how many chapters are there? no elaboration."),
         model=model,
         streaming_callback=print_stream,
     )
@@ -45,7 +45,7 @@ async def run(cache: bool):
 
     cprint("Second model response:", "green")
     response = await client.get_response(
-        messages=messages.copy().add_user_message("how many volumes are there? no elaboration."),
+        messages=messages.copy().add_user_text("how many volumes are there? no elaboration."),
         model=model,
         streaming_callback=print_stream,
     )

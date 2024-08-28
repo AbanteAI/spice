@@ -6,26 +6,44 @@ import mimetypes
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, AsyncIterator, Collection, ContextManager, Dict, List, Optional, Tuple, cast
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    AsyncIterator,
+    Collection,
+    ContextManager,
+    Dict,
+    List,
+    Optional,
+    Tuple,
+    Union,
+    cast,
+)
 
 import anthropic
 import httpx
 import openai
 import tiktoken
 from anthropic import AsyncAnthropic
-from anthropic.types import Message, MessageParam, MessageStreamEvent, TextBlockParam
+from anthropic.types import ImageBlockParam, Message, MessageParam, MessageStreamEvent, TextBlockParam
 from openai import AsyncAzureOpenAI, AsyncOpenAI, OpenAI
-from openai.types.chat import ChatCompletion, ChatCompletionChunk, ChatCompletionMessageParam
+from openai.types.chat import (
+    ChatCompletion,
+    ChatCompletionChunk,
+    ChatCompletionContentPartImageParam,
+    ChatCompletionContentPartTextParam,
+    ChatCompletionMessageParam,
+)
 from PIL import Image
 from pydantic import BaseModel
 from typing_extensions import override
 
+from spice.call_args import SpiceCallArgs
 from spice.errors import APIConnectionError, APIError, AuthenticationError, ImageError, InvalidModelError
-from spice.spice_message import VALID_MIMETYPES, SpiceMessage
+from spice.spice_message import SpiceMessage
 
 if TYPE_CHECKING:
     from spice.models import Model
-    from spice.spice import SpiceCallArgs
 
 
 class TextAndTokens(BaseModel):
@@ -76,6 +94,15 @@ class WrappedClient(ABC):
     async def get_transcription(self, audio_path: Path, model: str) -> tuple[str, float]: ...
 
 
+def _spice_message_to_openai_content_part(
+    message: SpiceMessage,
+) -> Union[ChatCompletionContentPartTextParam, ChatCompletionContentPartImageParam]:
+    if message.content.type == "text":
+        return {"type": "text", "text": message.content.text}
+    elif message.content.type == "image_url":
+        return {"type": "image_url", "image_url": {"url": message.content.image_url}}
+
+
 class WrappedOpenAIClient(WrappedClient):
     def __init__(self, key, base_url=None):
         self._sync_client = OpenAI(api_key=key, base_url=base_url)
@@ -83,11 +110,12 @@ class WrappedOpenAIClient(WrappedClient):
 
     def _convert_messages(self, messages: Collection[SpiceMessage]) -> List[ChatCompletionMessageParam]:
         converted_messages = []
-
         for message in messages:
-            # convert to dict and drop cache bool as that's just for anthropic
-            converted_messages.append({"role": message.role, "content": message.content})
-
+            content_part = _spice_message_to_openai_content_part(message)
+            if converted_messages and converted_messages[-1]["role"] == message.role:
+                converted_messages[-1]["content"].append(content_part)
+            else:
+                converted_messages.append({"role": message.role, "content": [content_part]})
         return converted_messages
 
     @override
@@ -242,125 +270,58 @@ class WrappedAzureClient(WrappedOpenAIClient):
             return super().process_chunk(chunk, call_args)
 
 
+def _spice_message_to_anthropic_block_param(message: SpiceMessage) -> Union[TextBlockParam, ImageBlockParam]:
+    if message.content.type == "text":
+        block_param = {"type": "text", "text": message.content.text}
+    elif message.content.type == "image_url":
+        image_url = message.content.image_url
+        if image_url.startswith("http"):
+            try:
+                response = httpx.get(image_url)
+            except:  # noqa: E722
+                raise ImageError(f"Error fetching image {image_url}.")
+            media_type = response.headers.get("content-type", mimetypes.guess_type(image_url)[0])
+            image = base64.b64encode(response.content).decode("utf-8")
+        else:
+            media_type = image_url.split(";", maxsplit=1)[0].replace("data:", "")
+            image = image_url.split(";base64,", maxsplit=1)[1]
+        block_param = {
+            "type": "image",
+            "source": {"type": "base64", "data": image, "media_type": media_type},
+        }
+    if message.cache:
+        block_param["cache_control"] = {"type": "ephemeral"}
+    return block_param
+
+
 class WrappedAnthropicClient(WrappedClient):
     def __init__(self, key):
         self._client = AsyncAnthropic(api_key=key)
 
-    def _convert_messages(
-        self, messages: Collection[SpiceMessage], add_json_brace: bool
-    ) -> Tuple[str, List[MessageParam]]:
-        # Anthropic handles both images and system messages different from OpenAI, only allows alternating user / assistant messages,
-        # and doesn't support tools / function calling (still in beta, and doesn't support streaming)
-        system = ""
+    def _convert_messages(self, messages: Collection[SpiceMessage], add_json_brace: bool) -> Tuple(
+        MessageParam, List[MessageParam]
+    ):
+        system_block_params: List[Union[TextBlockParam, ImageBlockParam]] = []
         converted_messages: List[MessageParam] = []
-        start = True
-        cur_role = ""
+
         for message in messages:
-            if message.role == "system" and start:
-                if system:
-                    system += "\n\n"
-                system += message.content  # pyright: ignore
-                continue
+            if message.role == "system":
+                if converted_messages:
+                    raise ValueError("System messages must be at the start of the conversation.")
+                system_block_params.append(_spice_message_to_anthropic_block_param(message))
+            else:
+                block_param = _spice_message_to_anthropic_block_param(message)
+                if converted_messages and converted_messages[-1]["role"] == message.role:
+                    converted_messages[-1]["content"].append(block_param)
+                else:
+                    converted_messages.append({"role": message.role, "content": [block_param]})
 
-            # First message must be user, and text content cannot be empty / whitespace only
-            if start and message.role != "user":
-                cur_role = "user"
-                converted_messages.append({"role": "user", "content": [{"type": "text", "text": "-"}]})
+        if add_json_brace:
+            if converted_messages[-1]["role"] != "assistant":
+                converted_messages.append({"role": "assistant", "content": []})
+            converted_messages[-1]["content"].append({"type": "text", "text": "{"})
 
-            start = False
-
-            # Anthropic messages can either be a string or list of objects; since user messages can have images, they should always be a list objects.
-            # Assistant messages should always be strings to keep them simple.
-            match message.role:
-                case "system":
-                    if cur_role == "user":
-                        message_object: TextBlockParam = {"type": "text", "text": f"\n\nSystem:\n{message.content}"}
-                        converted_messages[-1]["content"].append(message_object)  # pyright: ignore
-                    else:
-                        cur_role = "user"
-                        message_object: TextBlockParam = {"type": "text", "text": f"System:\n{message.content}"}
-                        converted_messages.append({"role": "user", "content": [message_object]})
-                case "assistant":
-                    content = message.content
-                    if content is None:
-                        content = ""
-                    if cur_role == "assistant":
-                        converted_messages[-1]["content"] += f"\n\n{content}"  # pyright: ignore
-                    else:
-                        cur_role = "assistant"
-                        converted_messages.append({"role": "assistant", "content": content})  # pyright: ignore
-                case "user":
-                    if isinstance(message.content, str):
-                        if cur_role == "user":
-                            converted_messages[-1]["content"].append(  # pyright: ignore
-                                {"type": "text", "text": f"\n\n{message.content}"}
-                            )
-                        else:
-                            converted_messages.append(
-                                {"role": "user", "content": [{"type": "text", "text": f"{message.content}"}]}
-                            )
-                    else:
-                        first = cur_role == "user"
-                        content = []
-                        for sub_content in message.content:
-                            if sub_content["type"] == "text":
-                                content.append(
-                                    {"type": "text", "text": ("\n\n" if first else "") + sub_content["text"]}
-                                )
-                            else:
-                                # This can either be base64 encoded data or a url; Anthropic only accepts base64 encoded data
-                                image = sub_content["image_url"]["url"]
-                                if image.startswith("http"):
-                                    try:
-                                        response = httpx.get(image)
-                                    except:  # noqa: E722
-                                        raise ImageError(f"Error fetching image {image}.")
-
-                                    media_type = response.headers.get("content-type", mimetypes.guess_type(image)[0])
-                                    image = base64.b64encode(response.content).decode("utf-8")
-                                else:
-                                    media_type = image.split(";", maxsplit=1)[0].replace("data:", "")
-                                    image = image.split(";base64,", maxsplit=1)[1]
-
-                                if media_type not in VALID_MIMETYPES:
-                                    raise ImageError(
-                                        f"Invalid image at {image}: Image must be a png, jpg, gif, or webp image."
-                                    )
-
-                                content.append(
-                                    {
-                                        "type": "image",
-                                        "source": {"type": "base64", "data": image, "media_type": media_type},
-                                    }
-                                )
-
-                            first = False
-                        if cur_role == "user":
-                            converted_messages[-1]["content"].extend(content)  # pyright: ignore
-                        else:
-                            converted_messages.append({"role": "user", "content": content})
-                    if message.cache:
-                        converted_messages[-1]["content"][-1]["cache_control"] = {"type": "ephemeral"}  # pyright: ignore
-                    cur_role = "user"
-                case "tool":
-                    # Right now anthropic tool use is in beta and doesn't support some things like streaming, but once it releases we can modify this.
-                    pass
-                case "function":
-                    # Deprecated, nobody should use this
-                    pass
-
-        if not converted_messages:
-            message_object: TextBlockParam = {"type": "text", "text": f"System:\n{system}"}
-            converted_messages.append({"role": "user", "content": [message_object]})
-            system = ""
-
-        if add_json_brace and converted_messages:
-            if converted_messages[-1]["role"] == "assistant" and not converted_messages[-1]["content"]:
-                converted_messages[-1]["content"] += "{"  # pyright: ignore
-            elif converted_messages[-1]["role"] == "user":
-                converted_messages.append({"role": "assistant", "content": "{"})
-
-        return system, converted_messages
+        return system_block_params, converted_messages
 
     @override
     async def get_chat_completion_or_stream(self, call_args: SpiceCallArgs):

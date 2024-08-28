@@ -9,7 +9,19 @@ from datetime import datetime
 from json import JSONDecodeError
 from pathlib import Path
 from timeit import default_timer as timer
-from typing import Any, AsyncIterator, Callable, Collection, Dict, Generic, List, Optional, TypeVar, Union, cast
+from typing import (
+    Any,
+    AsyncIterator,
+    Callable,
+    Collection,
+    Dict,
+    Generic,
+    List,
+    Optional,
+    TypeVar,
+    Union,
+    cast,
+)
 
 import httpx
 from jinja2 import DictLoader, Environment
@@ -21,7 +33,7 @@ from spice.models import EmbeddingModel, Model, TextModel, TranscriptionModel, g
 from spice.providers import Provider, get_provider_from_name
 from spice.retry_strategy import Behavior, RetryStrategy
 from spice.retry_strategy.default_strategy import DefaultRetryStrategy
-from spice.spice_message import MessagesEncoder, SpiceMessage, SpiceMessages
+from spice.spice_message import SpiceMessage, SpiceMessages
 from spice.utils import (
     embeddings_request_cost,
     print_stream,
@@ -391,7 +403,7 @@ class Spice:
 
     def _fix_call_args(
         self,
-        messages: Collection[SpiceMessage],
+        messages: Union[SpiceMessages, List[SpiceMessage]],
         model: Model,
         stream: bool,
         temperature: Optional[float],
@@ -402,6 +414,11 @@ class Spice:
         if response_format is not None:
             if response_format == {"type": "text"}:
                 response_format = None
+
+        # If messages is a SpiceMessages object, get the data so it can be serialized.
+        # Nothing is lost but the attached client
+        if isinstance(messages, SpiceMessages):
+            messages = messages.data
 
         return SpiceCallArgs(
             model=model.name,
@@ -414,7 +431,7 @@ class Spice:
 
     async def get_response(
         self,
-        messages: Collection[Union[SpiceMessage, Dict[str, Any]]],
+        messages: Union[SpiceMessages, List[SpiceMessage]],
         model: Optional[TextModel | str] = None,
         provider: Optional[Provider | str] = None,
         temperature: Optional[float] = None,
@@ -467,8 +484,6 @@ class Spice:
             The strategy determines which model responses will be accepted and on an invalid response how the call_args
             will be modified.
         """
-        messages = [SpiceMessage(**message) if isinstance(message, dict) else message for message in messages]
-
         if retry_strategy is None:
             retry_strategy = DefaultRetryStrategy(validator, converter, retries)
 
@@ -544,7 +559,7 @@ class Spice:
 
     async def stream_response(
         self,
-        messages: Collection[Union[SpiceMessage, Dict[str, Any]]],
+        messages: Union[SpiceMessages, List[SpiceMessage]],
         model: Optional[TextModel | str] = None,
         provider: Optional[Provider | str] = None,
         temperature: Optional[float] = None,
@@ -577,8 +592,6 @@ class Spice:
 
             name: If given, will be given this name when logged.
         """
-        messages = [SpiceMessage(**message) if isinstance(message, dict) else message for message in messages]
-
         text_model = self._get_text_model(model)
         client = self._get_client(text_model, provider)
         call_args = self._fix_call_args(messages, text_model, True, temperature, max_tokens, response_format)
