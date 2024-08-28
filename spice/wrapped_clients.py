@@ -16,7 +16,6 @@ from typing import (
     List,
     Literal,
     Optional,
-    Required,
     Tuple,
     TypedDict,
     Union,
@@ -50,9 +49,9 @@ if TYPE_CHECKING:
 
 
 # a MessageParam with more constrained structure
-class ConstrainedAnthropicMessageParam(TypedDict, total=False):
-    content: Required[List[Union[TextBlockParam, ImageBlockParam]]]
-    role: Required[Literal["user", "assistant"]]
+class ConstrainedAnthropicMessageParam(TypedDict):
+    content: List[Union[TextBlockParam, ImageBlockParam]]
+    role: Literal["user", "assistant"]
 
 
 class TextAndTokens(BaseModel):
