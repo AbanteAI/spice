@@ -341,7 +341,7 @@ class Spice:
             self._cur_logged_names[base_name] += 1
             response_dict = dataclasses.asdict(response)
             response_dict.pop("_result", "")  # May not be serializable
-            response_json = json.dumps(response_dict, cls=MessagesEncoder)
+            response_json = json.dumps(response_dict)
 
             logging_dir = self.logging_dir / self._cur_run
             logging_dir.mkdir(exist_ok=True, parents=True)

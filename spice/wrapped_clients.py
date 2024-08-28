@@ -14,8 +14,11 @@ from typing import (
     ContextManager,
     Dict,
     List,
+    Literal,
     Optional,
+    Required,
     Tuple,
+    TypedDict,
     Union,
     cast,
 )
@@ -25,7 +28,7 @@ import httpx
 import openai
 import tiktoken
 from anthropic import AsyncAnthropic
-from anthropic.types import ImageBlockParam, Message, MessageParam, MessageStreamEvent, TextBlockParam
+from anthropic.types import ImageBlockParam, Message, MessageStreamEvent, TextBlockParam
 from openai import AsyncAzureOpenAI, AsyncOpenAI, OpenAI
 from openai.types.chat import (
     ChatCompletion,
@@ -44,6 +47,12 @@ from spice.spice_message import SpiceMessage
 
 if TYPE_CHECKING:
     from spice.models import Model
+
+
+# a MessageParam with more constrained structure
+class ConstrainedAnthropicMessageParam(TypedDict, total=False):
+    content: Required[List[Union[TextBlockParam, ImageBlockParam]]]
+    role: Required[Literal["user", "assistant"]]
 
 
 class TextAndTokens(BaseModel):
@@ -101,6 +110,8 @@ def _spice_message_to_openai_content_part(
         return {"type": "text", "text": message.content.text}
     elif message.content.type == "image_url":
         return {"type": "image_url", "image_url": {"url": message.content.image_url}}
+    else:
+        raise ValueError(f"Unknown content type: {message.content.type}")
 
 
 class WrappedOpenAIClient(WrappedClient):
@@ -207,23 +218,21 @@ class WrappedOpenAIClient(WrappedClient):
             # this has 5 tokens (start token, role, \n, end token, \n), but we count the role token later
             num_tokens += 4
             content = message.content
-            if isinstance(content, list):
-                for entry in content:
-                    if entry["type"] == "text":
-                        num_tokens += len(encoding.encode(entry["text"]))
-                    if entry["type"] == "image_url":
-                        image_base64: str = entry["image_url"]["url"].split(",")[1]
-                        image_bytes: bytes = base64.b64decode(image_base64)
-                        image = Image.open(io.BytesIO(image_bytes))
-                        size = image.size
-                        # As described here: https://platform.openai.com/docs/guides/vision/calculating-costs
-                        scale = min(1, 2048 / max(size))
-                        size = (int(size[0] * scale), int(size[1] * scale))
-                        scale = min(1, 768 / min(size))
-                        size = (int(size[0] * scale), int(size[1] * scale))
-                        num_tokens += 85 + 170 * ((size[0] + 511) // 512) * ((size[1] + 511) // 512)
-            elif isinstance(content, str):
-                num_tokens += len(encoding.encode(content))
+            if content.type == "text":
+                num_tokens += len(encoding.encode(content.text))
+            elif content.type == "image_url":
+                image_base64: str = content.image_url.split(",")[1]
+                image_bytes: bytes = base64.b64decode(image_base64)
+                image = Image.open(io.BytesIO(image_bytes))
+                size = image.size
+                # As described here: https://platform.openai.com/docs/guides/vision/calculating-costs
+                scale = min(1, 2048 / max(size))
+                size = (int(size[0] * scale), int(size[1] * scale))
+                scale = min(1, 768 / min(size))
+                size = (int(size[0] * scale), int(size[1] * scale))
+                num_tokens += 85 + 170 * ((size[0] + 511) // 512) * ((size[1] + 511) // 512)
+            else:
+                raise ValueError(f"Unknown content type: {content.type}")
         num_tokens += 2  # every reply is primed with <|start|>assistant
         return num_tokens
 
@@ -278,7 +287,7 @@ def _spice_message_to_anthropic_block_param(message: SpiceMessage) -> Union[Text
         if image_url.startswith("http"):
             try:
                 response = httpx.get(image_url)
-            except:  # noqa: E722
+            except Exception:
                 raise ImageError(f"Error fetching image {image_url}.")
             media_type = response.headers.get("content-type", mimetypes.guess_type(image_url)[0])
             image = base64.b64encode(response.content).decode("utf-8")
@@ -289,26 +298,29 @@ def _spice_message_to_anthropic_block_param(message: SpiceMessage) -> Union[Text
             "type": "image",
             "source": {"type": "base64", "data": image, "media_type": media_type},
         }
+    # ignoring types because cache_control is still in beta
     if message.cache:
-        block_param["cache_control"] = {"type": "ephemeral"}
-    return block_param
+        block_param["cache_control"] = {"type": "ephemeral"}  # type: ignore
+    return block_param  # type: ignore
 
 
 class WrappedAnthropicClient(WrappedClient):
     def __init__(self, key):
         self._client = AsyncAnthropic(api_key=key)
 
-    def _convert_messages(self, messages: Collection[SpiceMessage], add_json_brace: bool) -> Tuple(
-        MessageParam, List[MessageParam]
-    ):
-        system_block_params: List[Union[TextBlockParam, ImageBlockParam]] = []
-        converted_messages: List[MessageParam] = []
+    def _convert_messages(
+        self, messages: Collection[SpiceMessage], add_json_brace: bool
+    ) -> Tuple[List[TextBlockParam], List[ConstrainedAnthropicMessageParam]]:
+        system_block_params: List[TextBlockParam] = []
+        converted_messages: List[ConstrainedAnthropicMessageParam] = []
 
         for message in messages:
             if message.role == "system":
                 if converted_messages:
                     raise ValueError("System messages must be at the start of the conversation.")
-                system_block_params.append(_spice_message_to_anthropic_block_param(message))
+                if message.content.type != "text":
+                    raise ValueError("System messages must be text.")
+                system_block_params.append(_spice_message_to_anthropic_block_param(message))  # type: ignore
             else:
                 block_param = _spice_message_to_anthropic_block_param(message)
                 if converted_messages and converted_messages[-1]["role"] == message.role:
@@ -345,7 +357,7 @@ class WrappedAnthropicClient(WrappedClient):
         return await self._client.messages.create(
             model=call_args.model,
             system=system,
-            messages=converted_messages,
+            messages=converted_messages,  # type: ignore
             stream=call_args.stream,
             max_tokens=max_tokens,
             extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},

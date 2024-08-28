@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import mimetypes
+from collections.abc import Collection
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Literal, Optional, Union, get_args
 
@@ -53,12 +54,9 @@ class SpiceMessage(BaseModel):
             content = TextContent(type="text", text=text)
         elif image_url is not None:
             content = ImageContent(type="image_url", image_url=image_url)
+        else:
+            raise ValueError("Either text or image_url must be provided.")
         super().__init__(role=role, content=content, cache=cache, prompt_metadata=prompt_metadata)
-
-    def add_text(self, role: Role, text: str, cache: bool = False) -> SpiceMessages:
-        """Appends a message with the given role and text."""
-        self.data.append(SpiceMessage(role=role, text=text, cache=cache))
-        return self
 
 
 def _generate_role_specific_methods(cls):
@@ -81,12 +79,20 @@ def _generate_role_specific_methods(cls):
 
 
 @_generate_role_specific_methods
-class SpiceMessages:
+class SpiceMessages(Collection[SpiceMessage]):
     """A collection of messages to be sent to an API endpoint."""
 
-    def __init__(self, client: Spice):
+    if TYPE_CHECKING:
+
+        def __getattribute__(self, name: str) -> Any:
+            for role in get_args(Role):
+                if name.startswith(f"add_{role}_"):
+                    _, suffix = name.split(f"{role}_")
+                    return getattr(self, f"add_{suffix}")
+
+    def __init__(self, client: Optional[Spice] = None, messages: Collection[SpiceMessage] = []):
         self._client = client
-        self.data: list[SpiceMessage] = []
+        self.data: list[SpiceMessage] = [message for message in messages]
 
     def add_text(self, role: Role, text: str, cache: bool = False) -> SpiceMessages:
         """Appends a message with the given role and text."""
@@ -116,6 +122,9 @@ class SpiceMessages:
 
     def add_prompt(self, role: Role, name: str, cache: bool = False, **context: Any) -> SpiceMessages:
         """Appends a message with the given role and pre-loaded prompt using jinja to render the context."""
+        if self._client is None:
+            raise ValueError("Cannot add prompt without a Spice client.")
+
         self.data.append(
             SpiceMessage(
                 role=role,
@@ -125,6 +134,9 @@ class SpiceMessages:
             )
         )
         return self
+
+    def __iter__(self):
+        return iter(self.data)
 
     def copy(self):
         new_copy = SpiceMessages(self._client)

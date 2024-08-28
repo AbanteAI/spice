@@ -3,7 +3,7 @@ from typing import Any, Callable, Tuple
 
 from spice.call_args import SpiceCallArgs
 from spice.retry_strategy import Behavior, RetryStrategy
-from spice.spice_message import assistant_message, user_message
+from spice.spice_message import SpiceMessages
 
 
 def default_failure_message(message: str) -> str:
@@ -40,9 +40,9 @@ class ValidatorStrategy(RetryStrategy):
         passed, message = self.validator(model_output)
         if not passed:
             if attempt_number < self.retries:
-                messages = list(call_args.messages)
-                messages.append(assistant_message(model_output))
-                messages.append(user_message(self.render_failure_message(message)))
+                messages = SpiceMessages(messages=call_args.messages)
+                messages.add_assistant_text(model_output)
+                messages.add_user_text(self.render_failure_message(message))
                 call_args = dataclasses.replace(call_args, messages=messages)
                 return Behavior.RETRY, call_args, None, f"{name}-retry-{attempt_number}-fail"
             else:
