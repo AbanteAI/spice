@@ -10,12 +10,16 @@ from spice import Spice
 
 async def basic_example():
     client = Spice()
+    model = "gpt-4o"
 
     messages = client.new_messages()
     messages.add_system_text("You are a helpful assistant.")
     messages.add_user_text("list 5 random words")
 
-    response = await client.get_response(messages=messages, model="gpt-4o")
+    tokens = client.count_prompt_tokens(messages, model=model)
+    print(f"Prompt tokens: {tokens}")
+
+    response = await client.get_response(messages=messages, model=model)
     print(response.text)
 
 
