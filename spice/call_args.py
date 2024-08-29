@@ -1,15 +1,14 @@
-from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Callable, Collection, Dict, Generic, List, Optional, TypeVar, cast
+from typing import List, Optional
 
 from openai.types.chat.completion_create_params import ResponseFormat
+from pydantic import BaseModel
 
-from spice.spice_message import MessagesEncoder, SpiceMessage
+from spice.spice_message import SpiceMessage
 
 
-@dataclass
-class SpiceCallArgs:
+class SpiceCallArgs(BaseModel):
     model: str
-    messages: Collection[SpiceMessage]
+    messages: List[SpiceMessage]
     stream: bool = False
     temperature: Optional[float] = None
     max_tokens: Optional[int] = None

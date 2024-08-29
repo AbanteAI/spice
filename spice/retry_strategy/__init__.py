@@ -1,8 +1,8 @@
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Any, Callable, Generic, Optional, TypeVar
+from typing import Generic, TypeVar
 
-from spice.spice import SpiceCallArgs
+from spice.call_args import SpiceCallArgs
 
 T = TypeVar("T")
 

@@ -87,7 +87,9 @@ async def test_validator_retry_strategy():
     spice._get_client = return_wrapped_client
     response = await spice.get_response(messages=[], model=HAIKU, retry_strategy=retry_strategy)
 
-    last_message = list(client.calls[-1].messages)[-1].get("content")
+    content = list(client.calls[-1].messages)[-1].content
+    assert content.type == "text"
+    last_message = content.text
     assert isinstance(last_message, str)
     assert "Failed to validate response for the following reason: You fail!" in last_message
     assert response.text == "Valid response"
@@ -106,7 +108,9 @@ async def test_converter_retry_strategy():
     retry_strategy = ConverterStrategy(converter=int, retries=1)
     response = await spice.get_response(messages=[], model=HAIKU, retry_strategy=retry_strategy)
 
-    last_message = list(client.calls[-1].messages)[-1].get("content")
+    content = list(client.calls[-1].messages)[-1].content
+    assert content.type == "text"
+    last_message = content.text
     assert isinstance(last_message, str)
     assert (
         "Failed to convert response for the following reason: invalid literal for int() with base 10: 'Not an int'"

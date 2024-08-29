@@ -1,10 +1,8 @@
 import dataclasses
-from abc import ABC, abstractmethod
-from enum import Enum
-from typing import Any, Callable, Optional, TypeVar
+from typing import Any, Callable, Optional
 
+from spice.call_args import SpiceCallArgs
 from spice.retry_strategy import Behavior, RetryStrategy, T
-from spice.spice import SpiceCallArgs
 
 
 class DefaultRetryStrategy(RetryStrategy):
