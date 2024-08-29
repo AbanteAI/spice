@@ -328,7 +328,7 @@ class WrappedAnthropicClient(WrappedClient):
                     converted_messages.append({"role": message.role, "content": [block_param]})
 
         if add_json_brace:
-            if converted_messages[-1]["role"] != "assistant":
+            if not converted_messages or converted_messages[-1]["role"] != "assistant":
                 converted_messages.append({"role": "assistant", "content": []})
             converted_messages[-1]["content"].append({"type": "text", "text": "{"})
 
