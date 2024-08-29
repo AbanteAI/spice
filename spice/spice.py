@@ -78,16 +78,17 @@ class SpiceResponse(BaseModel, Generic[T]):
         May be inaccurate for incompleted streamed responses.
         Will be None if the cost of the model used is not known.""",
     )
-    result: Optional[T] = Field(
-        default=None,
-        exclude=True,  # may not be serializable
-        description="""The result of this response, if a converter was given,
-        otherwise the raw text.""",
-    )
 
-    def __post_init__(self):
-        if self.result is None:
-            self.result = self.text  # type: ignore
+    def __init__(self, result: Optional[T] = None, **kwargs):
+        super().__init__(**kwargs)
+        self._result = result
+
+    @property
+    def result(self) -> T:
+        """The result of this response, if a converter was given, otherwise the raw text."""
+        if self._result is None:
+            return self.text  # type: ignore
+        return self._result
 
     @property
     def total_tokens(self) -> int:
