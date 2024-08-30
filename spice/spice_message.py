@@ -64,10 +64,10 @@ class SpiceMessages(List[SpiceMessage]):
 
     def __init__(self, client: Optional[Spice] = None, messages: Collection[SpiceMessage] = []):
         self._client = client
-        self.data: list[SpiceMessage] = [message for message in messages]
+        super().__init__(messages)
 
     def add_text(self, role: Role, text: str, cache: bool = False) -> SpiceMessages:
-        self.data.append(SpiceMessage(role=role, text=text, cache=cache))
+        self.append(SpiceMessage(role=role, text=text, cache=cache))
         return self
 
     def add_user_text(self, text: str, cache: bool = False) -> SpiceMessages:
@@ -82,7 +82,7 @@ class SpiceMessages(List[SpiceMessage]):
     def add_user_image_from_url(self, url: str, cache: bool = False) -> SpiceMessages:
         if not (url.startswith("http://") or url.startswith("https://")):
             raise ImageError(f"Invalid image URL {url}: Must be http or https protocol.")
-        self.data.append(SpiceMessage(role="user", image_url=url, cache=cache))
+        self.append(SpiceMessage(role="user", image_url=url, cache=cache))
         return self
 
     def add_user_image_from_file(self, file_path: Path | str, cache: bool = False) -> SpiceMessages:
@@ -95,7 +95,7 @@ class SpiceMessages(List[SpiceMessage]):
         with file_path.open("rb") as file:
             image_bytes = file.read()
         image = base64.b64encode(image_bytes).decode("utf-8")
-        self.data.append(SpiceMessage(role="user", image_url=f"data:{media_type};base64,{image}", cache=cache))
+        self.append(SpiceMessage(role="user", image_url=f"data:{media_type};base64,{image}", cache=cache))
         return self
 
     def add_prompt(self, role: Role, name: str, cache: bool = False, **context: Any) -> SpiceMessages:
@@ -103,7 +103,7 @@ class SpiceMessages(List[SpiceMessage]):
         if self._client is None:
             raise ValueError("Cannot add prompt without a Spice client.")
 
-        self.data.append(
+        self.append(
             SpiceMessage(
                 role=role,
                 text=self._client.get_rendered_prompt(name, **context),
@@ -122,16 +122,6 @@ class SpiceMessages(List[SpiceMessage]):
     def add_assistant_prompt(self, name: str, cache: bool = False, **context: Any) -> SpiceMessages:
         return self.add_prompt("assistant", name, cache, **context)
 
-    def __iter__(self):
-        return iter(self.data)
-
-    def __len__(self):
-        return len(self.data)
-
-    def __contains__(self, item):
-        return item in self.data
-
     def copy(self):
-        new_copy = SpiceMessages(self._client)
-        new_copy.data = self.data.copy()
+        new_copy = SpiceMessages(self._client, self)
         return new_copy
