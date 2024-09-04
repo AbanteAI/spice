@@ -174,7 +174,9 @@ def get_model_from_name(model_name: str) -> Model:
                 else:
                     input_cost = None
                     output_cost = None
-                model = model.model_copy(update={"name": model_name, "input_cost": input_cost, "output_cost": output_cost})
+                model = model.model_copy(
+                    update={"name": model_name, "input_cost": input_cost, "output_cost": output_cost}
+                )
                 return model
 
     return UnknownModel(model_name, None)
