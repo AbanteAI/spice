@@ -1,4 +1,3 @@
-import dataclasses
 from typing import Any, Callable, Optional
 
 from spice.call_args import SpiceCallArgs
