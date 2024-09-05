@@ -1,4 +1,3 @@
-import dataclasses
 from typing import Any, Callable, Optional
 
 from spice.call_args import SpiceCallArgs
@@ -17,9 +16,9 @@ class DefaultRetryStrategy(RetryStrategy):
         self, call_args: SpiceCallArgs, attempt_number: int, model_output: str, name: str
     ) -> tuple[Behavior, SpiceCallArgs, Any, str]:
         if attempt_number == 1 and call_args.temperature is not None:
-            call_args = dataclasses.replace(call_args, temperature=max(0.2, call_args.temperature))
+            call_args = call_args.model_copy(update={"temperature": max(0.2, call_args.temperature)})
         elif attempt_number > 1 and call_args.temperature is not None:
-            call_args = dataclasses.replace(call_args, temperature=max(0.5, call_args.temperature))
+            call_args = call_args.model_copy(update={"temperature": max(0.5, call_args.temperature)})
 
         if self.validator and not self.validator(model_output):
             if attempt_number < self.retries:
