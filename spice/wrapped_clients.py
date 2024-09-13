@@ -60,6 +60,7 @@ class TextAndTokens(BaseModel):
     cache_creation_input_tokens: Optional[int] = None
     cache_read_input_tokens: Optional[int] = None
     output_tokens: Optional[int] = None
+    reasoning_tokens: Optional[int] = None
 
 
 class WrappedClient(ABC):
@@ -130,18 +131,22 @@ class WrappedOpenAIClient(WrappedClient):
 
     @override
     async def get_chat_completion_or_stream(self, call_args: SpiceCallArgs):
+        # If using vision you have to set max_tokens or api errors
+        if call_args.max_tokens is None and "gpt-4" in call_args.model:
+            max_tokens = 4096
+        else:
+            max_tokens = call_args.max_tokens
+
         # WrappedOpenAIClient can be used with a proxy to a non openai llm, which may not support response_format
         maybe_kwargs: Dict[str, Any] = {}
         if call_args.response_format is not None and "type" in call_args.response_format:
             maybe_kwargs["response_format"] = call_args.response_format
         if call_args.stream:
             maybe_kwargs["stream_options"] = {"include_usage": True}
-
-        # If using vision you have to set max_tokens or api errors
-        if call_args.max_tokens is None and "gpt-4" in call_args.model:
-            max_tokens = 4096
-        else:
-            max_tokens = call_args.max_tokens
+        if max_tokens is not None:
+            maybe_kwargs["max_tokens"] = max_tokens
+        if call_args.temperature is not None:
+            maybe_kwargs["temperature"] = call_args.temperature
 
         converted_messages = self._convert_messages(call_args.messages)
 
@@ -149,8 +154,6 @@ class WrappedOpenAIClient(WrappedClient):
             model=call_args.model,
             messages=converted_messages,
             stream=call_args.stream,
-            temperature=call_args.temperature,
-            max_tokens=max_tokens,
             **maybe_kwargs,
         )
 
@@ -169,12 +172,18 @@ class WrappedOpenAIClient(WrappedClient):
 
     @override
     def extract_text_and_tokens(self, chat_completion, call_args: SpiceCallArgs):
+        # not working on azure
+        if hasattr(chat_completion.usage, "completion_tokens_details"):
+            reasoning_tokens = chat_completion.usage.completion_tokens_details["reasoning_tokens"]
+        else:
+            reasoning_tokens = 0
         return TextAndTokens(
             text=chat_completion.choices[0].message.content,
             input_tokens=chat_completion.usage.prompt_tokens,
             cache_creation_input_tokens=0,
             cache_read_input_tokens=0,
             output_tokens=chat_completion.usage.completion_tokens,
+            reasoning_tokens=reasoning_tokens,
         )
 
     @override

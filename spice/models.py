@@ -69,6 +69,17 @@ class UnknownModel(TextModel, EmbeddingModel, TranscriptionModel):
     pass
 
 
+o1_preview = TextModel("o1-preview", OPEN_AI, input_cost=15, output_cost=60, context_length=128000)
+
+o1_preview_2024_09_12 = TextModel(
+    "o1-preview-2024-09-12", OPEN_AI, input_cost=15, output_cost=60, context_length=128000
+)
+
+o1_mini = TextModel("o1-mini", OPEN_AI, input_cost=3, output_cost=12, context_length=128000)
+
+o1_mini_2024_09_12 = TextModel("o1-mini-2024-09-12", OPEN_AI, input_cost=3, output_cost=12, context_length=128000)
+
+
 GPT_4o = TextModel("gpt-4o", OPEN_AI, input_cost=500, output_cost=1500, context_length=128000)
 """Warning: This model always points to OpenAI's latest GPT-4o model (currently gpt-4o-2024-05-13), so the input and output costs may be incorrect. We recommend using specific versions of GPT-4o instead."""
 
