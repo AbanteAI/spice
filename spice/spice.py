@@ -68,6 +68,10 @@ class SpiceResponse(BaseModel, Generic[T]):
         description="""The number of output tokens given by the model in this response.
         May be inaccurate for incomplete streamed responses."""
     )
+    reasoning_tokens: int = Field(
+        description="""The number of reasoning tokens given by the model in this response. These are
+        also counted in output_tokens. Only applies to OpenAI o1 models.""",
+    )
     completed: bool = Field(
         description="""Whether or not this response was fully completed.
         This will only ever be false for incomplete streamed responses."""
@@ -195,6 +199,7 @@ class StreamingSpiceResponse:
             cache_creation_input_tokens=cache_creation_input_tokens,
             cache_read_input_tokens=cache_read_input_tokens,
             output_tokens=output_tokens,
+            reasoning_tokens=0,
             completed=self._finished,
             cost=cost,
         )
@@ -532,6 +537,7 @@ class Spice:
                 cache_creation_input_tokens=text_and_tokens.cache_creation_input_tokens,  # type: ignore
                 cache_read_input_tokens=text_and_tokens.cache_read_input_tokens,  # type: ignore
                 output_tokens=text_and_tokens.output_tokens,  # type: ignore
+                reasoning_tokens=text_and_tokens.reasoning_tokens or 0,  # type: ignore
                 completed=True,
                 cost=cost,
                 result=result,
