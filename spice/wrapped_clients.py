@@ -123,10 +123,19 @@ class WrappedOpenAIClient(WrappedClient):
         converted_messages = []
         for message in messages:
             content_part = _spice_message_to_openai_content_part(message)
-            if converted_messages and converted_messages[-1]["role"] == message.role:
+            if (
+                converted_messages
+                and converted_messages[-1]["role"] == message.role
+                and (
+                    ("name" in converted_messages[-1]) == (message.name is not None)
+                    and ("name" not in converted_messages[-1] or message.name == converted_messages[-1]["name"])
+                )
+            ):
                 converted_messages[-1]["content"].append(content_part)
             else:
                 converted_messages.append({"role": message.role, "content": [content_part]})
+                if message.name is not None:
+                    converted_messages[-1]["name"] = message.name
         return converted_messages
 
     @override

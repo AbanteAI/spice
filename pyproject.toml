@@ -23,7 +23,8 @@ dependencies = [
     "pillow",
     "tiktoken",
     "httpx",
-    "jinja2"
+    "jinja2",
+    "termcolor",
 ]
 
 [project.optional-dependencies]
@@ -32,5 +33,4 @@ dev = [
     "pyright",
     "pytest",
     "pytest-asyncio",
-    "termcolor",
 ]
