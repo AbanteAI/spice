@@ -120,7 +120,7 @@ class WrappedOpenAIClient(WrappedClient):
         self._client = AsyncOpenAI(api_key=key, base_url=base_url)
 
     def _convert_messages(self, messages: Collection[SpiceMessage]) -> List[ChatCompletionMessageParam]:
-        converted_messages: List[ChatCompletionMessageParam] = []
+        converted_messages = []
         for message in messages:
             content_part = _spice_message_to_openai_content_part(message)
             if (
@@ -128,7 +128,7 @@ class WrappedOpenAIClient(WrappedClient):
                 and converted_messages[-1]["role"] == message.role
                 and (
                     ("name" in converted_messages[-1]) == (message.name is not None)
-                    and (message.name is None or message.name == converted_messages[-1]["name"])
+                    and ("name" not in converted_messages[-1] or message.name == converted_messages[-1]["name"])
                 )
             ):
                 converted_messages[-1]["content"].append(content_part)
